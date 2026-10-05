@@ -1,0 +1,15 @@
+# Claude Code lays its API types here when the mod loads (that folder ignores itself too)
+.claude-plugin/types/
+
+node_modules/
+
+# local builds of the extension: the one that ships is dist/agent-board.vsix
+*.vsix
+!dist/agent-board.vsix
+
+# preview screenshots and the browser profiles that took them
+vscode-extension/preview/*.png
+chrome-profile/
+
+.DS_Store
+Thumbs.db

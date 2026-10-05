@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Board panel preview</title>
+<!--
+  One agent's detail as the editor panel shows it, in a plain browser, with made-up data.
+
+  Query parameters:
+    theme=light     VS Code's light theme stand-ins (default: dark)
+    state=running   the agent mid-run (default: ended, with its report)
+    click=3         opens that step (0-based), as a click would
+-->
+<style>
+  /* stand-ins for what VS Code injects into a webview */
+  body.vscode-dark {
+    --vscode-foreground: #cccccc;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-widget-border: #313131;
+    --vscode-focusBorder: #0078d4;
+    --vscode-editor-background: #1f1f1f;
+    --vscode-button-secondaryBackground: #313131;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-textLink-foreground: #4daafc;
+  }
+  body.vscode-light {
+    --vscode-foreground: #3b3b3b;
+    --vscode-descriptionForeground: #616161;
+    --vscode-widget-border: #e5e5e5;
+    --vscode-focusBorder: #005fb8;
+    --vscode-editor-background: #ffffff;
+    --vscode-button-secondaryBackground: #e5e5e5;
+    --vscode-button-secondaryForeground: #3b3b3b;
+    --vscode-textLink-foreground: #005fb8;
+  }
+  body {
+    --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Microsoft JhengHei UI", sans-serif;
+    --vscode-font-size: 13px;
+    --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  }
+</style>
+<link rel="stylesheet" href="../media/board.css">
+</head>
+<body class="is-panel">
+<div id="detail" class="d-panel"></div>
+<script>
+  const params = new URLSearchParams(location.search)
+  document.body.classList.add(params.get('theme') === 'light' ? 'vscode-light' : 'vscode-dark')
+  window.acquireVsCodeApi = () => ({ getState: () => null, setState: () => {}, postMessage: () => {} })
+</script>
+<script src="fixture.js"></script>
+<script src="../media/detail.js"></script>
+<script src="../media/panel.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    window.postMessage({ type: 'detail', data: window.previewDetail(params.get('state') !== 'running') }, '*')
+    if (params.get('click')) {
+      setTimeout(() => {
+        const line = document.querySelectorAll('.d-step-line')[Number(params.get('click'))]
+        if (line) line.click()
+      }, 200)
+    }
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Board preview</title>
+<!--
+  The board's webview in a plain browser, with made-up data (fixture.js): open this file directly.
+
+  Query parameters:
+    w=340          the sidebar's width in px (the body is that wide; the window can be wider)
+    theme=light    VS Code's light theme stand-ins (default: dark)
+    multi=1        four conversations instead of one
+    empty=1        a conversation with no subagents
+    error=1        the shared usage read refused (HTTP 429), readings gone stale
+    fallback=1     no Claude tab matched yet
+    detail=1       the running agent's detail open; detail=done, the ended agent's with its report
+    click=3        with a detail open: opens that step (0-based), as a click would
+    debug=1        writes any element wider than the window into the page title
+-->
+<style>
+  /* stand-ins for what VS Code injects into a webview */
+  body.vscode-dark {
+    --vscode-foreground: #cccccc;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-widget-border: #313131;
+    --vscode-focusBorder: #0078d4;
+    --vscode-sideBar-background: #181818;
+    --vscode-button-secondaryBackground: #313131;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-textLink-foreground: #4daafc;
+    background: #181818;
+  }
+  body.vscode-light {
+    --vscode-foreground: #3b3b3b;
+    --vscode-descriptionForeground: #616161;
+    --vscode-widget-border: #e5e5e5;
+    --vscode-focusBorder: #005fb8;
+    --vscode-sideBar-background: #f8f8f8;
+    --vscode-button-secondaryBackground: #e5e5e5;
+    --vscode-button-secondaryForeground: #3b3b3b;
+    --vscode-textLink-foreground: #005fb8;
+    background: #f8f8f8;
+  }
+  body {
+    --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Microsoft JhengHei UI", sans-serif;
+    --vscode-font-size: 13px;
+    --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  }
+</style>
+<link rel="stylesheet" href="../media/board.css">
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const params = new URLSearchParams(location.search)
+  document.body.className = params.get('theme') === 'light' ? 'vscode-light' : 'vscode-dark'
+  if (params.get('w')) {
+    // a sidebar narrower than a headless browser's smallest window
+    document.body.style.width = `${params.get('w')}px`
+    document.documentElement.style.background = params.get('theme') === 'light' ? '#f8f8f8' : '#181818'
+  }
+  const detailMode = params.get('detail')
+  // the webview's bridge to the extension: here it only remembers which detail is open
+  window.acquireVsCodeApi = () => ({
+    getState: () => (detailMode ? { detail: { sessionId: 'session-a', agentId: 'a1f3c9d2e7', key: 'session-a:a1f3c9d2e7' } } : null),
+    setState: () => {},
+    postMessage: () => {},
+  })
+</script>
+<script src="fixture.js"></script>
+<script src="../media/detail.js"></script>
+<script src="../media/board.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    const options = {
+      multi: params.get('multi') === '1',
+      empty: params.get('empty') === '1',
+      error: params.get('error') === '1',
+      fallback: params.get('fallback') === '1',
+    }
+    const isDone = detailMode === 'done'
+    window.postMessage(isDone ? window.previewBoardDone(options) : window.previewBoard(options), '*')
+    if (detailMode) {
+      window.postMessage({ type: 'detail', data: window.previewDetail(isDone) }, '*')
+      if (params.get('click')) {
+        setTimeout(() => {
+          const line = document.querySelectorAll('.d-step-line')[Number(params.get('click'))]
+          if (line) line.click()
+        }, 200)
+      }
+    }
+    if (params.get('debug') === '1') {
+      setTimeout(() => {
+        const wide = [...document.querySelectorAll('#app *')]
+          .filter(node => node.getBoundingClientRect().right > innerWidth + 1)
+          .slice(0, 8)
+          .map(node => `${node.tagName}.${node.className}:${Math.round(node.getBoundingClientRect().right)}`)
+        document.title = `inner=${innerWidth} scroll=${document.documentElement.scrollWidth} wide=${wide.join(' | ')}`
+      }, 500)
+    }
+  })
+</script>
+</body>
+</html>

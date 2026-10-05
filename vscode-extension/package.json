@@ -1,0 +1,102 @@
+{
+  "name": "agent-board",
+  "displayName": "Agent Board",
+  "description": "A live board for Claude Code inside VS Code: every conversation's subagents and their task details, subscription usage, and context fill, fed by the agent-board mod",
+  "version": "0.5.1",
+  "publisher": "jeremy-local",
+  "license": "MIT",
+  "homepage": "https://github.com/JeremyHo1123/claude-code-agent-board#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeremyHo1123/claude-code-agent-board.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JeremyHo1123/claude-code-agent-board/issues"
+  },
+  "scripts": {
+    "test": "node test/extension.test.js",
+    "package": "npx -y @vscode/vsce@latest package --no-dependencies --skip-license -o ../dist/"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentBoard",
+          "title": "Agent Board",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentBoard": [
+        {
+          "type": "webview",
+          "id": "agentBoard.view",
+          "name": "子代理"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentBoard.open",
+        "title": "打開子代理面板",
+        "category": "Agent Board"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Board",
+      "properties": {
+        "agentBoard.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "同時有 2 個以上子代理在執行時，自動顯示面板（不會搶走輸入焦點）。"
+        },
+        "agentBoard.usageInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "在狀態列右側常駐顯示訂閱用量（5 小時工作階段與每週額度）；接近上限時變色。"
+        },
+        "agentBoard.contextInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "在狀態列右側顯示「目前對話」的上下文用量；會跟著你點開的 Claude 分頁切換，接近上限時變色。"
+        },
+        "agentBoard.notify.waiting": {
+          "type": "boolean",
+          "default": true,
+          "description": "某個 Claude 對話在等你回答問題或允許權限超過 15 秒時通知。"
+        },
+        "agentBoard.notify.subagents": {
+          "type": "boolean",
+          "default": true,
+          "description": "子代理完成或失敗時通知（一次 3 個以上合併成一則）。"
+        },
+        "agentBoard.notify.turnDone": {
+          "type": "boolean",
+          "default": true,
+          "description": "某個對話工作超過 2 分鐘、這一輪做完時通知。"
+        },
+        "agentBoard.notify.usage": {
+          "type": "boolean",
+          "default": true,
+          "description": "5 小時或每週額度剛跨過 80% 或 90% 時通知。"
+        },
+        "agentBoard.dataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "agent-board mod 寫入快照的資料夾；留空表示 ~/.claude/agent-board/sessions。"
+        }
+      }
+    }
+  }
+}
