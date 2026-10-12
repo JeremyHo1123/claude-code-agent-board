@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-2a78d6">
+  <img alt="version 0.7.0" src="https://img.shields.io/badge/version-0.7.0-2a78d6">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 or later" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -64,6 +64,8 @@ Agent Board gets around this by splitting the job in two:
 **Subscription usage that keeps up.** The 5-hour and weekly windows of your Claude plan, with per-model buckets and extra usage when you have them. Resets are worded as claude.ai's usage page words them. The status bar always shows `5h % · 週 %`. Two accounts on one machine (VS Code signed in to one, the desktop app to another) are never mixed: the board shows the account VS Code and the terminal use, and leaves out one that only the desktop app is signed in to. `agentBoard.usageOfDesktopApp` shows that one too, each account with its own meters headed by its sign-in's email.
 
 **The right conversation's context.** Each conversation's context fill, computed the way `/context` computes it. The meter follows the Claude tab you are looking at, and the status bar shows it too.
+
+**Your prompts, as chapters.** 我的提問 lists every prompt you typed in the conversation in view. Click one and the board shows that conversation's Claude tab, opens VS Code's find there and searches for the prompt, so the panel lands on it (Enter goes to the next match). The start of the prompt is left on the clipboard. The list is closed until you open it.
 
 **Notifications** when a conversation has waited 15 seconds, a subagent ends or fails, a long turn finishes, or usage crosses 80% or 90%. Each kind has its own switch.
 
@@ -160,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | ends with `Validation passed` |
 | Type `/agent-board` in a Claude Code conversation | it answers with the subagent board |
 | List `~/.claude/agent-board/sessions/` | one `<sessionId>.json` per open conversation, modified within the last minute |
-| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.6.0` |
+| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.7.0` |
 | Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · 週 …%` and `上下文 …%` in the status bar once a conversation has had one reply |
 
 ### Update

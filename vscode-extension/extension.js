@@ -391,6 +391,69 @@ function entrypointIn(buffer) {
   return match === null ? undefined : match[1]
 }
 
+/** A block the engine put beside what the person typed: `<system-reminder>…`, `<command-name>…`, a pasted instruction. */
+const WRAPPED = /^<[a-z][\w-]*>/
+
+/**
+ * The prompts the person typed, out of whole transcript rows: `{ at, text }` each. A typed prompt is
+ * a user row stamped `origin.kind: "human"`; its text is what is left without the blocks the engine
+ * wrapped in a tag (so a slash command, all wrapped, is none).
+ */
+function promptsIn(text) {
+  const found = []
+  for (const line of text.split('\n')) {
+    if (!line.includes('"type":"user"') || !line.includes('"kind":"human"')) {
+      continue
+    }
+    let row
+    try {
+      row = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (row.type !== 'user' || row.isMeta || row.isSidechain || !row.origin || row.origin.kind !== 'human' || !row.message) {
+      continue
+    }
+    const content = row.message.content
+    const blocks = typeof content === 'string' ? [content] : Array.isArray(content) ? content.map(block => (block && block.type === 'text' ? block.text : '')) : []
+    const typed = blocks
+      .map(block => String(block || '').trim())
+      .filter(block => block !== '' && !WRAPPED.test(block))
+      .join('\n')
+    if (typed !== '') {
+      found.push({ at: Date.parse(row.timestamp) || 0, text: typed })
+    }
+  }
+
+  return found
+}
+
+/** A prompt's first line, to list it by. */
+function promptHead(text, max) {
+  const line = text.split('\n').find(candidate => candidate.trim() !== '') || ''
+  const letters = Array.from(line.trim())
+
+  return letters.length > max ? `${letters.slice(0, max - 1).join('')}…` : letters.join('')
+}
+
+/**
+ * What to search the Claude panel for to land on a prompt: the start of its first line, short enough
+ * to sit in one run of text on the page and long enough to be the only match.
+ */
+function promptNeedle(text) {
+  const line = text.split('\n').find(candidate => candidate.trim() !== '') || ''
+
+  return Array.from(line.trim()).slice(0, 32).join('').trim()
+}
+
+/** A first read of a long transcript is taken in stretches of this size, one a poll. */
+const PROMPTS_STRETCH_BYTES = 8 * 1_048_576
+const PROMPTS_RECHECK_MS = 2_000
+/** VS Code's commands that focus an editor group, by its view column. */
+const FOCUS_GROUP = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'].map(
+  nth => `workbench.action.focus${nth}EditorGroup`,
+)
+
 /** The entrypoint of a conversation in the Claude desktop app, which signs in apart from VS Code and the terminal. */
 const DESKTOP_ENTRYPOINT = 'claude-desktop'
 
@@ -888,6 +951,9 @@ class AgentBoard {
     this.shared = []
     /** sessionId -> { path, size, custom, ai, isScanned, checkedAt, soughtAt }: each session's titles, from its transcript. */
     this.titles = new Map()
+    /** The typed prompts of the conversation in view: sessionId -> { path, offset, list, checkedAt }. */
+    this.prompts = new Map()
+    this.promptsSessionId = undefined
     /** The session whose Claude tab was last focused, matched by its label. */
     this.focusedSessionId = undefined
     /** With no tab matched: the session the context meter settled on, kept while it lives. */
@@ -989,6 +1055,7 @@ class AgentBoard {
     const sessions = this.sessions()
     await this.readShared()
     await this.refreshTitles(sessions)
+    await this.refreshPrompts(this.promptsSessionId)
     await this.refreshWorkflows(sessions)
     await this.nameUnnamed(sessions)
     this.updateFocus(sessions)
@@ -1409,6 +1476,111 @@ ${tags}
   }
 
   /**
+   * The prompts the person typed in one session, read from its transcript as it grows: only what
+   * was appended, in whole rows. The board lists the current conversation's, to jump to.
+   */
+  async refreshPrompts(sessionId) {
+    if (sessionId === undefined) {
+      return
+    }
+    let entry = this.prompts.get(sessionId)
+    if (entry === undefined) {
+      // one conversation's at a time: the list of the one in view
+      this.prompts.clear()
+      entry = { path: undefined, offset: 0, list: [], checkedAt: 0 }
+      this.prompts.set(sessionId, entry)
+    }
+    const now = Date.now()
+    if (now - entry.checkedAt < PROMPTS_RECHECK_MS) {
+      return
+    }
+    entry.checkedAt = now
+    try {
+      entry.path = entry.path || (this.titles.get(sessionId) || {}).path || (await findTranscript(sessionId))
+      if (entry.path === undefined) {
+        return
+      }
+      const stat = await fs.promises.stat(entry.path)
+      if (stat.size < entry.offset) {
+        // rewritten shorter: read again from the start
+        entry.offset = 0
+        entry.list = []
+      }
+      if (stat.size === entry.offset) {
+        return
+      }
+      const stretch = await readRange(entry.path, entry.offset, Math.min(stat.size, entry.offset + PROMPTS_STRETCH_BYTES))
+      // up to the last whole row: the rest is read with what comes after it
+      const end = stretch.lastIndexOf(0x0a) + 1
+      if (end === 0) {
+        return
+      }
+      entry.list.push(...promptsIn(stretch.subarray(0, end).toString('utf8')))
+      entry.offset += end
+      // more to catch up on: the next poll goes on at once
+      entry.checkedAt = entry.offset < stat.size ? 0 : now
+    } catch {
+      entry.path = undefined
+    }
+  }
+
+  /** The current conversation's prompts as the board lists them: `{ sessionId, list: [{ at, head }] }`. */
+  promptsOf(sessionId) {
+    const entry = sessionId === undefined ? undefined : this.prompts.get(sessionId)
+
+    return entry === undefined ? undefined : { sessionId, list: entry.list.map(prompt => ({ at: prompt.at, head: promptHead(prompt.text, 80) })) }
+  }
+
+  /** The Claude tab of a session, matched by its label as `updateFocus` matches the focused one. */
+  claudeTabOf(sessionId) {
+    const title = this.titleOf(sessionId)
+    const groups = (vscode.window.tabGroups && vscode.window.tabGroups.all) || []
+    const tabs = groups.flatMap(group => group.tabs.map((tab, index) => ({ tab, group, index }))).filter(found => isClaudeTab(found.tab))
+    const label = title === undefined ? 'Claude Code' : tabLabelOf(title)
+
+    return tabs.find(found => found.tab.label === label) || (tabs.length === 1 ? tabs[0] : undefined)
+  }
+
+  /**
+   * Brings a prompt of a conversation into view in VS Code's Claude panel. Nothing outside that
+   * panel can scroll it (it raises no `ui.render`, so a mod's `$.ui.scroll` has no row to name, and
+   * it has no command for it), but it has VS Code's own find: this shows the conversation's tab,
+   * opens find, and pastes the start of the prompt, which find then lands on. The text stays on the
+   * clipboard, for where the paste did not take.
+   */
+  async jumpToPrompt(sessionId, index) {
+    const entry = this.prompts.get(sessionId)
+    const prompt = entry && entry.list[index]
+    const needle = prompt === undefined ? '' : promptNeedle(prompt.text)
+    if (needle === '') {
+      return
+    }
+    await vscode.env.clipboard.writeText(needle)
+    const found = this.claudeTabOf(sessionId)
+    if (found === undefined) {
+      vscode.window.setStatusBarMessage('$(search) 找不到這個對話的 Claude 分頁；提問的開頭已複製，在 Claude 面板按 Ctrl+F 貼上', 6_000)
+
+      return
+    }
+    try {
+      const focusGroup = FOCUS_GROUP[found.group.viewColumn - 1]
+      if (!found.tab.isActive || !found.group.isActive) {
+        if (focusGroup !== undefined) {
+          await vscode.commands.executeCommand(focusGroup)
+        }
+        await vscode.commands.executeCommand('workbench.action.openEditorAtIndex', found.index)
+      }
+      await vscode.commands.executeCommand('editor.action.webvieweditor.showFind')
+      // the find box takes focus a moment after it shows
+      await new Promise(resolve => setTimeout(resolve, 200))
+      await vscode.commands.executeCommand('editor.action.clipboardPasteAction')
+      vscode.window.setStatusBarMessage('$(search) 已搜尋這句提問：Enter 跳下一個相符處，Esc 關閉；沒有跳的話按 Ctrl+V', 6_000)
+    } catch {
+      vscode.window.setStatusBarMessage('$(search) 提問的開頭已複製：在 Claude 面板按 Ctrl+F 貼上', 6_000)
+    }
+  }
+
+  /**
    * The focused Claude tab, matched to a session by its label: the context meter follows it. A new
    * conversation's tab has no title to match yet; it is taken for the one live session without one.
    */
@@ -1501,11 +1673,14 @@ ${tags}
       return { ...session, ...(title === undefined ? {} : { title }), ...(entrypoint === undefined ? {} : { entrypoint }), agents }
     })
     const current = this.currentSessionId(sessions)
+    // read by the next poll: the list trails a change of conversation by one
+    this.promptsSessionId = current.sessionId
     const isDesktopShown = vscode.workspace.getConfiguration('agentBoard').get('usageOfDesktopApp', false)
     this.usage = mergeUsage(sessions, this.shared, current.sessionId, isDesktopShown)
     const payload = JSON.stringify({
       sessions,
       usage: this.usage,
+      prompts: this.promptsOf(current.sessionId),
       currentSessionId: current.sessionId,
       isCurrentFocused: current.isFocused,
     })
@@ -1867,6 +2042,8 @@ ${tags}
         this.openPanel(message.sessionId, message.agentId, message.label)
       } else if (message.type === 'copy') {
         this.copy(message.text)
+      } else if (message.type === 'prompt-jump' && typeof message.sessionId === 'string' && Number.isInteger(message.index)) {
+        void this.jumpToPrompt(message.sessionId, message.index)
       }
     })
     view.onDidDispose(() => {
@@ -1905,6 +2082,9 @@ module.exports = {
   deactivate,
   AgentBoard,
   mergeUsage,
+  promptsIn,
+  promptHead,
+  promptNeedle,
   titlesIn,
   tabLabelOf,
   parseAgentTranscript,

@@ -63,7 +63,11 @@
   const detailMode = params.get('detail')
   // the webview's bridge to the extension: here it only remembers which detail is open
   window.acquireVsCodeApi = () => ({
-    getState: () => (detailMode ? { detail: { sessionId: 'session-a', agentId: 'a1f3c9d2e7', key: 'session-a:a1f3c9d2e7' } } : null),
+    getState: () =>
+      detailMode
+        ? { detail: { sessionId: 'session-a', agentId: 'a1f3c9d2e7', key: 'session-a:a1f3c9d2e7' } }
+        : // ?prompts=1 opens the list of the conversation's prompts, which starts closed
+          { promptsOpen: params.get('prompts') === '1' },
     setState: () => {},
     postMessage: () => {},
   })

@@ -9,6 +9,8 @@
   const saved = vscode.getState() || {}
   const ui = {
     endedOpen: saved.endedOpen !== false,
+    /** The list of the current conversation's prompts: closed until asked for. */
+    promptsOpen: saved.promptsOpen === true,
     /** The agent whose detail is open: { sessionId, agentId, key }; undefined on the board. */
     detail: saved.detail && typeof saved.detail.key === 'string' ? saved.detail : undefined,
   }
@@ -42,6 +44,8 @@
   let sessions = []
   /** The subscription usage as the extension settled it: one entry of `accounts` per account on the board. */
   let usageData = { list: [], accounts: [] }
+  /** The prompts typed in the current conversation: `{ sessionId, list: [{ at, head }] }`, or undefined. */
+  let promptsData
   /** The session the context meter shows: the focused Claude tab's, else the one it settled on. */
   let currentId
   let isCurrentFocused = false
@@ -298,19 +302,49 @@
   const endedList = el('div', 'ended')
   endedSection.append(toggle, endedList)
 
+  // the current conversation's prompts, to jump to: closed until asked for
+  const promptsSection = el('section', 'section')
+  const promptsToggle = el('button', 'toggle')
+  promptsToggle.type = 'button'
+  const promptsCount = el('span', 'count')
+  promptsToggle.append(el('span', 'chev', '▼'), el('span', '', '我的提問'), promptsCount)
+  const promptsList = el('div', 'list is-prompts')
+  promptsSection.append(promptsToggle, promptsList)
+
   const empty = el('div', 'empty')
 
   // one agent's task, in place of the board while it is open
   const detailRoot = el('div', 'detail')
   detailRoot.hidden = true
 
-  const boardParts = [top, usage, attentionSection, sessionsSection, runningSection, endedSection, empty, fresh]
+  const boardParts = [top, usage, promptsSection, attentionSection, sessionsSection, runningSection, endedSection, empty, fresh]
   app.append(...boardParts, detailRoot)
 
   toggle.addEventListener('click', () => {
     ui.endedOpen = !ui.endedOpen
     save()
     renderEnded()
+  })
+
+  promptsToggle.addEventListener('click', () => {
+    ui.promptsOpen = !ui.promptsOpen
+    save()
+    renderPrompts()
+  })
+
+  // one listener for every row: the rows are drawn again as the conversation grows
+  const jumpFrom = target => {
+    const row = target instanceof Element ? target.closest('.row[data-index]') : null
+    if (row !== null && promptsData !== undefined) {
+      vscode.postMessage({ type: 'prompt-jump', sessionId: promptsData.sessionId, index: Number(row.dataset.index) })
+    }
+  }
+  promptsList.addEventListener('click', event => jumpFrom(event.target))
+  promptsList.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      jumpFrom(event.target)
+    }
   })
 
   // ── an agent's detail ────────────────────────────────────────────
@@ -1024,6 +1058,45 @@
     endedList.replaceChildren(...rows)
   }
 
+  // ── the current conversation's prompts ───────────────────────────
+
+  /** What the list last drew, so a poll that changes nothing leaves the rows (and the scroll) alone. */
+  let promptsDrawn = ''
+
+  function renderPrompts() {
+    const list = promptsData === undefined ? [] : promptsData.list
+    promptsSection.hidden = list.length === 0
+    setText(promptsCount, String(list.length))
+    promptsToggle.setAttribute('aria-expanded', String(ui.promptsOpen))
+    promptsToggle.title = '目前對話裡你打過的每一句。點一句，就到 Claude 分頁搜尋它（Enter 跳下一個相符處）'
+    promptsList.hidden = !ui.promptsOpen || list.length === 0
+
+    const signature = promptsList.hidden ? '' : `${promptsData.sessionId}:${list.length}`
+    if (signature === promptsDrawn) {
+      return
+    }
+    promptsDrawn = signature
+    promptsList.replaceChildren(
+      ...(promptsList.hidden ? [] : list).map((prompt, index) => {
+        const row = el('div', 'row is-prompt')
+        row.tabIndex = 0
+        row.dataset.index = String(index)
+        row.title = [prompt.head, '', '點一下：到 Claude 分頁搜尋這一句'].join('\n')
+        const line = el('div', 'line')
+        line.append(
+          el('span', 'glyph lead', String(index + 1)),
+          el('span', 'label body', prompt.head),
+          el('span', 'elapsed end', prompt.at ? clockOf(prompt.at).slice(0, 5) : ''),
+        )
+        row.append(line)
+
+        return row
+      }),
+    )
+    // the latest prompt is the likeliest wanted: the list opens at its end
+    promptsList.scrollTop = promptsList.scrollHeight
+  }
+
   // ── empty state ──────────────────────────────────────────────────
 
   const EMPTY_ICON =
@@ -1056,6 +1129,7 @@
     const now = Date.now()
     renderTop(now)
     renderUsage(now)
+    renderPrompts()
     renderAttention(now)
     renderRunning(now)
     renderEnded()
@@ -1070,6 +1144,7 @@
     const message = event.data
     if (message && message.type === 'data' && Array.isArray(message.sessions)) {
       sessions = message.sessions
+      promptsData = message.prompts && Array.isArray(message.prompts.list) ? message.prompts : undefined
       const posted = message.usage && Array.isArray(message.usage.list) ? message.usage : { list: [] }
       // a message with no `accounts` (the preview's plain one) is one account that names none
       usageData = Array.isArray(posted.accounts) ? posted : { ...posted, accounts: [{ ...posted, id: '', sessions: [] }] }
@@ -1105,6 +1180,7 @@
     }
     renderTop(now)
     renderUsage(now)
+    renderPrompts()
     renderAttention(now)
     renderRunning(now)
   }, 1000)

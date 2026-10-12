@@ -723,6 +723,31 @@ body.vscode-high-contrast-light {
   white-space: nowrap;
 }
 
+/* the current conversation's prompts: a long conversation scrolls inside the list */
+.list.is-prompts {
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.row.is-prompt {
+  --accent: var(--ink-3);
+
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.row.is-prompt .glyph {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.row.is-prompt .label {
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── token bar: three categorical slots, 2px surface gaps, round ends ── */
 
 .tokens {

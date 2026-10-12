@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本 0.6.0" src="https://img.shields.io/badge/version-0.6.0-2a78d6">
+  <img alt="版本 0.7.0" src="https://img.shields.io/badge/version-0.7.0-2a78d6">
   <img alt="MIT 授權" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 以上" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 以上" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -64,6 +64,8 @@ Agent Board 的做法是把工作拆成兩半：
 **跟得上的訂閱用量。** 你的 Claude 方案的 5 小時和每週額度；有各模型分項和額外用量的話也會顯示。重置時間的寫法和 claude.ai 的用量頁一樣。狀態列常駐顯示 `5h % · 週 %`。同一台電腦上有兩個帳號時（例如 VS Code 登入一個、桌面版登入另一個），兩邊的數字不會混在一起：面板顯示 VS Code 和終端機用的那個帳號，只有桌面版在用的帳號不顯示。打開 `agentBoard.usageOfDesktopApp` 就會連那個帳號一起顯示，每個帳號各有自己的一組用量條，開頭標著該帳號登入的 email。
 
 **對的那個對話的上下文。** 每個對話各自的上下文用量，算法和 `/context` 相同。量表會跟著你正在看的 Claude 分頁，狀態列也有一份。
+
+**把你的提問當章節。** 「我的提問」列出目前對話裡你打過的每一句。點一句，面板會切到那個對話的 Claude 分頁、打開 VS Code 的搜尋並搜尋那一句，畫面就停在它上面（按 Enter 跳下一個相符處）。那一句的開頭會留在剪貼簿。清單預設收合，要用時再打開。
 
 **通知。** 對話等了 15 秒、子代理完成或失敗、跑很久的一輪做完了、用量跨過 80% 或 90% 時通知你。每一種都有自己的開關。
 
@@ -160,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | 最後一行是 `Validation passed` |
 | 在 Claude Code 對話裡輸入 `/agent-board` | 回覆子代理面板 |
 | 列出 `~/.claude/agent-board/sessions/` | 每個開著的對話各有一個 `<sessionId>.json`，修改時間在一分鐘內 |
-| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.6.0` |
+| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.7.0` |
 | 看 VS Code | 活動列有 **Agent Board** 圖示；對話回覆過一次後，狀態列出現 `5h …% · 週 …%` 和 `上下文 …%` |
 
 ### 更新

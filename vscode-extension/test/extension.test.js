@@ -41,6 +41,9 @@ Module._load = function (request, ...rest) {
 const {
   AgentBoard,
   mergeUsage,
+  promptsIn,
+  promptHead,
+  promptNeedle,
   titlesIn,
   tabLabelOf,
   parseAgentTranscript,
@@ -388,6 +391,55 @@ async function main() {
     const crossed = take()
     assert.equal(crossed.length, 1, JSON.stringify(crossed))
     assert.ok(has(crossed, 'warning', '【b@example.com】5 小時工作階段已用 85%'), JSON.stringify(crossed))
+  }
+
+  // ── the prompts the person typed, out of transcript rows ──────
+  {
+    const row = fields => JSON.stringify({ type: 'user', timestamp: '2030-01-01T00:00:10.000Z', ...fields })
+    const human = { kind: 'human' }
+    const rows = [
+      row({ origin: human, message: { role: 'user', content: '把週報腳本改寫成 TypeScript\n先不要動測試' } }),
+      // what the engine put beside the prompt is not the prompt
+      row({ origin: human, message: { content: [{ type: 'text', text: '<system-reminder>注意</system-reminder>' }, { type: 'text', text: '為什麼這裡會回傳 undefined' }] } }),
+      row({ origin: human, message: { content: [{ type: 'image', source: {} }, { type: 'text', text: '長這樣' }] } }),
+      // a slash command, a tool's result, a skill's text, a subagent's prompt, a queued notification: none typed
+      row({ origin: human, message: { content: '<command-name>/jump</command-name>' } }),
+      row({ message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } }),
+      row({ isMeta: true, origin: human, message: { content: [{ type: 'text', text: 'Base directory for this skill' }] } }),
+      row({ isSidechain: true, origin: human, message: { content: '搜尋本週論文' } }),
+      row({ origin: { kind: 'task-notification' }, message: { content: '子代理完成了' } }),
+      '{"type":"user","origin":{"kind":"human"},"message":{"content":"寫到一半', // caught mid-write
+    ]
+    const prompts = promptsIn(rows.join('\n'))
+    assert.deepEqual(prompts.map(prompt => prompt.text), ['把週報腳本改寫成 TypeScript\n先不要動測試', '為什麼這裡會回傳 undefined', '長這樣'])
+    assert.equal(prompts[0].at, Date.parse('2030-01-01T00:00:10.000Z'))
+
+    // listed by its first line, cut to fit; searched for by the start of that line
+    assert.equal(promptHead('\n  把週報腳本改寫成 TypeScript\n先不要動測試', 80), '把週報腳本改寫成 TypeScript')
+    assert.equal(promptHead('一二三四五六', 4), '一二三…')
+    assert.equal(promptNeedle('  為什麼這裡會回傳 undefined  \n第二行'), '為什麼這裡會回傳 undefined')
+    assert.equal(Array.from(promptNeedle('好'.repeat(50))).length, 32)
+
+    // the board reads a transcript as it grows: whole rows only, the rest with what comes after
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-board-prompts-'))
+    const file = path.join(dir, 's1.jsonl')
+    const board = new AgentBoard({ subscriptions: [] })
+    board.titles.set('s1', { path: file })
+    fs.writeFileSync(file, `${rows[0]}\n${rows[1].slice(0, 40)}`)
+    await board.refreshPrompts('s1')
+    assert.deepEqual(board.promptsOf('s1').list.map(prompt => prompt.head), ['把週報腳本改寫成 TypeScript'])
+    fs.appendFileSync(file, `${rows[1].slice(40)}\n`)
+    now += 5_000
+    await board.refreshPrompts('s1')
+    assert.deepEqual(board.promptsOf('s1'), {
+      sessionId: 's1',
+      list: [
+        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: '把週報腳本改寫成 TypeScript' },
+        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: '為什麼這裡會回傳 undefined' },
+      ],
+    })
+    assert.equal(board.promptsOf('other'), undefined)
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 
   // ── tab labels and transcript titles ──────────────────────────

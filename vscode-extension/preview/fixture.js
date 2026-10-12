@@ -116,6 +116,16 @@
       type: 'data',
       sessions,
       usage: options.accounts ? { ...usage, accounts: [mine, other] } : usage,
+      prompts: {
+        sessionId: options.multi ? 'session-d' : 'session-a',
+        list: [
+          '把週報腳本改寫成 TypeScript，先不要動測試',
+          '為什麼 parseDate 在這裡會回傳 undefined',
+          '好，那順便補上時區的測試，台北和 UTC 各一組，還有跨日的情況也要涵蓋到',
+          'ok',
+          '跑一次全部的測試給我看結果',
+        ].map((head, index) => ({ at: at(3_000 - index * 540), head })),
+      },
       currentSessionId: options.multi ? 'session-d' : 'session-a',
       isCurrentFocused: !options.fallback,
     }

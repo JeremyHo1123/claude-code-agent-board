@@ -102,6 +102,19 @@ doubles from 60 seconds to 10 minutes. Do not shorten the interval without measu
 **Context: ask for the breakdown.** `$.session.usage()` alone gives the last reply's figure, which
 trails a step. `$.session.usage({ breakdown: 'summary' })` gives `/context`'s estimate.
 
+**Jumping to a prompt goes through find.** Nothing outside VS Code's Claude panel can scroll it. A
+mod's `$.ui.scroll` needs the message id a `ui.render` hook sees, and that panel raises none: a
+probe mod there read `$.session.surfaces()` as empty and saw no `UserMessage` drawn (2.1.296). The
+Claude extension has no command for it either, and another extension cannot reach into its webview.
+What the panel does have is VS Code's find (`enableFindWidget`). So `jumpToPrompt` copies the start
+of the prompt's first line, activates the conversation's tab (`claudeTabOf`, by label; a tab is
+shown by focusing its group and `workbench.action.openEditorAtIndex`), runs
+`editor.action.webvieweditor.showFind`, waits 200 ms and runs `editor.action.clipboardPasteAction`.
+No `selectAll` before the paste: should the find box not have taken focus, that would replace a
+draft in Claude's input. Find sees only what is in the page, so a prompt the panel has not drawn is
+not found. The prompts come from the transcript (`promptsIn`): user rows stamped
+`origin.kind: "human"`, less the blocks the engine wrapped in a tag.
+
 **Tab titles are cut.** The Claude extension labels a tab with the title cut to 24 characters plus
 `…` when it is longer than 25, and `Claude Code` when there is none. `tabLabelOf` copies that rule.
 If the rule changes upstream, focus-following silently stops working: look for `rename_tab` in the
