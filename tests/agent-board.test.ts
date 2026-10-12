@@ -1,7 +1,15 @@
 import type { AgentInfo } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { boardRootOf, describeCall, formatElapsed, formatTokens, parsePlanUsage } from '../hooks/format'
+import {
+  boardRootOf,
+  describeCall,
+  formatElapsed,
+  formatTokens,
+  parseAccount,
+  parsePlanUsage,
+  planFileOf,
+} from '../hooks/format'
 
 /** The home folder every test's session reports: the board's files land under its .claude/agent-board. */
 const HOME = '/home/tester'
@@ -38,10 +46,29 @@ test('the plan usage body reads into windows, and junk reads as none', async () 
   expect(parsePlanUsage({ five_hour: { utilization: '62' } }, 0)).toBeUndefined()
 })
 
-test('one read of the plan usage serves every session through the shared file, and a refusal backs off', async ($, on) => {
+/** What the profile endpoint answers: whose credential the session holds. */
+const PROFILE_BODY = {
+  account: { uuid: '11111111-2222-3333-4444-555555555555', email: 'tester@example.com', display_name: 'Tester' },
+  organization: { uuid: '0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9', name: "tester@example.com's Organization" },
+}
+
+test('the profile body reads into an account, which names the shared file', async () => {
+  // the organization's id (the limits are its), short and safe in a file name; the email to show
+  expect(parseAccount(PROFILE_BODY)).toEqual({ id: '0a1b2c3d4e5f', label: 'tester@example.com' })
+  expect(parseAccount({ account: { uuid: 'ABCDEF01-2345', display_name: 'Tester' } })).toEqual({ id: 'abcdef012345', label: 'Tester' })
+  expect(parseAccount({ organization: { uuid: '0a1b2c3d' } })).toEqual({ id: '0a1b2c3d' })
+  expect(parseAccount({ account: { email: 'tester@example.com' } })).toBeUndefined()
+  expect(parseAccount('not json')).toBeUndefined()
+  expect(planFileOf({ id: '0a1b2c3d4e5f' })).toBe('plan-0a1b2c3d4e5f.json')
+  expect(planFileOf(undefined)).toBe('plan.json')
+})
+
+test('one read of the plan usage serves every session of the account through its shared file, and a refusal backs off', async ($, on) => {
   const clock = mock.clock(on, { now: 100_000 })
-  const PLAN_FILE = '/home/tester/.claude/agent-board/plan.json'
+  const PLAN_FILE = '/home/tester/.claude/agent-board/plan-0a1b2c3d4e5f.json'
   const files = new Map<string, string>()
+  /** The profile endpoint's requests, apart from the usage reads the test counts. */
+  const asked: { url: string; auth?: string }[] = []
   const fetched: { url: string; auth?: string; beta?: string }[] = []
   /** While set, the endpoint answers 429, with this Retry-After when it has one. */
   let refusal: { retryAfter?: string } | undefined
@@ -52,6 +79,11 @@ test('one read of the plan usage serves every session through the shared file, a
   on('session.authorize', () => ({ value: { handle: 'handle-1', kind: 'bearer' } as const }))
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? HOME : undefined }))
   on('http.fetch', ($, e) => {
+    if (e.url.endsWith('/api/oauth/profile')) {
+      asked.push({ url: e.url, auth: e.init?.auth })
+
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(PROFILE_BODY) } }
+    }
     fetched.push({ url: e.url, auth: e.init?.auth, beta: e.init?.headers?.['anthropic-beta'] })
 
     const headers: Record<string, string> =
@@ -87,11 +119,19 @@ test('one read of the plan usage serves every session through the shared file, a
 
   await $.session.start({ cwd: '/work/project', surface: 'vscode', isInteractive: true })
 
-  // no shared file yet: this session claims the read, makes it, and writes the answer back
+  // no shared file yet: this session learns its account, claims that account's read, makes it, and writes the answer back
   await clock.advance(1_000)
+  expect(asked).toEqual([{ url: 'https://api.anthropic.com/api/oauth/profile', auth: 'handle-1' }])
   expect(fetched).toEqual([{ url: 'https://api.anthropic.com/api/oauth/usage', auth: 'handle-1', beta: 'oauth-2025-04-20' }])
   expect(shared().plan.windows[0]).toMatchObject({ key: 'five_hour', percent: 62 })
   expect(shared().nextAttemptAt).toBe(131_000)
+  // the read and the session's snapshot both say whose usage it is; no file is shared across accounts
+  expect(shared().account).toEqual({ id: '0a1b2c3d4e5f', label: 'tester@example.com' })
+  expect(JSON.parse(files.get('/home/tester/.claude/agent-board/sessions/session-9.json') ?? '{}').account).toEqual({
+    id: '0a1b2c3d4e5f',
+    label: 'tester@example.com',
+  })
+  expect(files.has('/home/tester/.claude/agent-board/plan.json')).toBe(false)
 
   // another session read just now: this one waits for the file's next time
   files.set(PLAN_FILE, JSON.stringify({ ...shared(), nextAttemptAt: 160_000 }))

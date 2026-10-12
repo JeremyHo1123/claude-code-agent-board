@@ -2,7 +2,7 @@
   "name": "agent-board",
   "displayName": "Agent Board",
   "description": "A live board for Claude Code inside VS Code: every conversation's subagents and their task details, subscription usage, and context fill, fed by the agent-board mod",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "jeremy-local",
   "license": "MIT",
   "homepage": "https://github.com/JeremyHo1123/claude-code-agent-board#readme",
@@ -65,6 +65,11 @@
           "type": "boolean",
           "default": true,
           "description": "在狀態列右側常駐顯示訂閱用量（5 小時工作階段與每週額度）；接近上限時變色。"
+        },
+        "agentBoard.usageOfDesktopApp": {
+          "type": "boolean",
+          "default": false,
+          "description": "也顯示「只有 Claude 桌面版在用」的帳號的訂閱用量。預設關閉：桌面版登入另一個帳號時，面板只顯示 VS Code 這邊的帳號。"
         },
         "agentBoard.contextInStatusBar": {
           "type": "boolean",

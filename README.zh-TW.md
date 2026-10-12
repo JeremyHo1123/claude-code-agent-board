@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本 0.5.1" src="https://img.shields.io/badge/version-0.5.1-2a78d6">
+  <img alt="版本 0.6.0" src="https://img.shields.io/badge/version-0.6.0-2a78d6">
   <img alt="MIT 授權" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 以上" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 以上" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -61,7 +61,7 @@ Agent Board 的做法是把工作拆成兩半：
 
 **「需要你」區。** 在等你允許或回答的對話、暫無動作的子代理、剛失敗的子代理，都集中在最上面。有對話在等你時，狀態列會變成「在等你」。
 
-**跟得上的訂閱用量。** 你的 Claude 方案的 5 小時和每週額度；有各模型分項和額外用量的話也會顯示。重置時間的寫法和 claude.ai 的用量頁一樣。狀態列常駐顯示 `5h % · 週 %`。
+**跟得上的訂閱用量。** 你的 Claude 方案的 5 小時和每週額度；有各模型分項和額外用量的話也會顯示。重置時間的寫法和 claude.ai 的用量頁一樣。狀態列常駐顯示 `5h % · 週 %`。同一台電腦上有兩個帳號時（例如 VS Code 登入一個、桌面版登入另一個），兩邊的數字不會混在一起：面板顯示 VS Code 和終端機用的那個帳號，只有桌面版在用的帳號不顯示。打開 `agentBoard.usageOfDesktopApp` 就會連那個帳號一起顯示，每個帳號各有自己的一組用量條，開頭標著該帳號登入的 email。
 
 **對的那個對話的上下文。** 每個對話各自的上下文用量，算法和 `/context` 相同。量表會跟著你正在看的 Claude 分頁，狀態列也有一份。
 
@@ -75,7 +75,7 @@ flowchart LR
         mod["agent-board mod<br/>(function hooks)"]
     end
     api["api.anthropic.com<br/>/api/oauth/usage"]
-    board[("~/.claude/agent-board/<br/>sessions/&lt;id&gt;.json<br/>plan.json")]
+    board[("~/.claude/agent-board/<br/>sessions/&lt;id&gt;.json<br/>plan-&lt;account&gt;.json")]
     transcripts[("~/.claude/projects/…<br/>子代理的對話紀錄<br/>workflow 執行檔")]
     ext["Agent Board<br/>VS Code 擴充套件"]
     ui["側邊欄面板<br/>細節分頁<br/>狀態列<br/>通知"]
@@ -88,7 +88,7 @@ flowchart LR
 ```
 
 - **快照。** mod 掛在對話、回合、工具呼叫、子代理這些事件上。有變化就寫 `sessions/<sessionId>.json`，最多每秒一次，另外每分鐘寫一次當作心跳。檔案裡有子代理清單、對話狀態（工作中、等待、閒置）、上下文用量、額度讀數。
-- **用量有兩個來源。** 每次 API 回覆都會附帶額度讀數，很即時，但會稍微落後。`/usage` 讀的那個端點最準，所以由**一個**對話每 30 秒替所有對話讀一次，結果放在 `plan.json`。同一段期間內用量只會增加，所以面板顯示目前這段期間裡**最高**的讀數。期間重置或換帳號後，舊期間的讀數立刻作廢。
+- **用量有兩個來源。** 每次 API 回覆都會附帶額度讀數，很即時，但會稍微落後。`/usage` 讀的那個端點最準，所以由**一個**對話每 30 秒替同帳號的所有對話讀一次，結果放在 `plan-<帳號>.json`。同一段期間內用量只會增加，所以面板顯示目前這段期間裡**最高**的讀數。期間重置或換帳號後，舊期間的讀數立刻作廢。每份對話快照和每份共用讀數都記著自己的帳號，兩個帳號的讀數不會放在一起算。
 - **任務細節。** Claude Code 本來就會把每個子代理的對話紀錄，寫在它所屬對話的紀錄旁邊。細節頁開著時，擴充套件讀那個檔案，檔案變長就再讀一次。它也會讀 workflow 的執行檔，取得代理的名稱和階段。
 - **哪個對話算「目前」。** VS Code 不會告訴一個擴充套件，另一個擴充套件的分頁顯示的是哪個對話。所以面板拿分頁上的標題，去比對 Claude Code 寫進每份紀錄裡的標題。
 
@@ -160,7 +160,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | 最後一行是 `Validation passed` |
 | 在 Claude Code 對話裡輸入 `/agent-board` | 回覆子代理面板 |
 | 列出 `~/.claude/agent-board/sessions/` | 每個開著的對話各有一個 `<sessionId>.json`，修改時間在一分鐘內 |
-| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.5.1` |
+| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.6.0` |
 | 看 VS Code | 活動列有 **Agent Board** 圖示；對話回覆過一次後，狀態列出現 `5h …% · 週 …%` 和 `上下文 …%` |
 
 ### 更新
@@ -188,6 +188,7 @@ code --uninstall-extension jeremy-local.agent-board
 |---|---|---|
 | `agentBoard.autoReveal` | `true` | 同時有 2 個以上子代理在跑時，自動顯示面板（不會搶走鍵盤焦點） |
 | `agentBoard.usageInStatusBar` | `true` | 狀態列常駐顯示 `5h % · 週 %`；70% 起變黃，90% 起變紅 |
+| `agentBoard.usageOfDesktopApp` | `false` | 也顯示「只有 Claude 桌面版在用」的帳號的用量 |
 | `agentBoard.contextInStatusBar` | `true` | 狀態列常駐顯示目前對話的上下文用量 |
 | `agentBoard.notify.waiting` | `true` | 對話等你回答或允許超過 15 秒時通知 |
 | `agentBoard.notify.subagents` | `true` | 子代理完成或失敗時通知；一次 3 個以上合併成一則 |
@@ -200,7 +201,8 @@ code --uninstall-extension jeremy-local.agent-board
 ## 它讀什麼、送出什麼
 
 - **只在你的電腦上讀取：** mod 自己寫的快照，以及 Claude Code 存在 `~/.claude/projects/` 的對話紀錄（用來取得對話標題和子代理細節）。它不會寫入那個資料夾。
-- **只發出一種網路請求：** `GET https://api.anthropic.com/api/oauth/usage`，就是 Claude Code 的 `/usage` 讀的端點。請求透過 Claude Code 的憑證代號（`$.session.authorize()`）送出，所以 token 不會經過 mod 的程式碼。所有對話加起來最多每 30 秒一次；被拒絕時會拉長間隔，最長 10 分鐘。
+- **只發出兩種網路請求，** 都送到 `api.anthropic.com`：`GET /api/oauth/usage`，就是 Claude Code 的 `/usage` 讀的端點；以及 `GET /api/oauth/profile`，用來知道這個對話的憑證屬於哪個帳號。請求透過 Claude Code 的憑證代號（`$.session.authorize()`）送出，所以 token 不會經過 mod 的程式碼。同一個帳號的所有對話加起來，最多每 30 秒讀一次用量；被拒絕時會拉長間隔，最長 10 分鐘。每個對話每 10 分鐘問一次帳號。
+- **帳號的 email 只留在你的電腦上。** 帳號的 email 和組織代號的開頭會寫進面板的檔案，用來把兩個帳號的用量分開、並標在各帳號的用量條開頭。不會送到任何地方。
 - **沒有任何遙測。** 除此之外，沒有資料離開你的電腦。
 
 `claude plugin validate` 會印出 mod 掛了哪些事件、呼叫了什麼、讀了什麼，你可以自己核對。

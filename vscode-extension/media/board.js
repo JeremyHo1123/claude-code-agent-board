@@ -40,8 +40,8 @@
   }
 
   let sessions = []
-  /** The subscription's windows, each from its freshest source, merged by the extension. */
-  let usageData = { list: [] }
+  /** The subscription usage as the extension settled it: one entry of `accounts` per account on the board. */
+  let usageData = { list: [], accounts: [] }
   /** The session the context meter shows: the focused Claude tab's, else the one it settled on. */
   let currentId
   let isCurrentFocused = false
@@ -495,14 +495,14 @@
     return seconds < 60 ? `${seconds} 秒後` : seconds < 3600 ? `${Math.ceil(seconds / 60)} 分鐘後` : `${Math.ceil(seconds / 3600)} 小時後`
   }
 
-  /** Why the shared claude.ai read is behind, and when it is tried again; undefined while it works. */
-  function planProblem(now) {
-    const error = usageData.planError
+  /** Why an account's shared claude.ai read is behind, and when it is tried again; undefined while it works. */
+  function planProblem(account, now) {
+    const error = account.planError
     if (!error) {
       return undefined
     }
     const what = error.status === 429 ? '被限流' : error.status ? `失敗（HTTP ${error.status}）` : '失敗'
-    const nextAt = usageData.planNextAt
+    const nextAt = account.planNextAt
     const retry = typeof nextAt === 'number' && nextAt > now ? `，${inText(nextAt - now)}再試` : ''
 
     return {
@@ -514,10 +514,15 @@
     }
   }
 
-  /** The subscription's windows as the extension settled them, with where and when each figure was read. */
-  function windowRows(now) {
-    return usageData.list.map(window => ({
-      key: `w:${window.key}`,
+  /** What an account is called where two are shown: its sign-in's email, else that it is not known. */
+  function accountName(account) {
+    return account.label || (account.id === '' ? '未辨識的帳號' : `帳號 ${account.id.slice(0, 6)}`)
+  }
+
+  /** An account's windows as the extension settled them, with where and when each figure was read. */
+  function windowRows(account, now) {
+    return account.list.map(window => ({
+      key: `w:${account.id}:${window.key}`,
       label: window.label,
       percent: window.percent,
       at: window.at,
@@ -535,12 +540,23 @@
 
   const CONTEXT_KEY = 'context'
   const meterByKey = new Map()
-  const usageHead = el('div', 'usage-head')
-  const usageTitle = el('span', 'usage-title', '訂閱用量')
-  const usageFresh = el('span', 'usage-fresh')
-  usageHead.append(usageTitle, usageFresh)
-  const usageNote = el('div', 'usage-note')
-  const usageExtra = el('div', 'usage-extra')
+  /** account id -> its head (title, whose it is, how fresh), note and extra-usage line; kept so nothing redraws */
+  const accountParts = new Map()
+
+  function partsFor(id) {
+    let parts = accountParts.get(id)
+    if (parts === undefined) {
+      const head = el('div', 'usage-head')
+      const title = el('span', 'usage-title', '訂閱用量')
+      const name = el('span', 'usage-session')
+      const fresh = el('span', 'usage-fresh')
+      head.append(title, name, fresh)
+      parts = { head, title, name, fresh, note: el('div', 'usage-note'), extra: el('div', 'usage-extra') }
+      accountParts.set(id, parts)
+    }
+
+    return parts
+  }
   // the current conversation's context: a sub-head naming the conversation, then its meter
   const contextHead = el('div', 'usage-head is-sub')
   const contextTitle = el('span', 'usage-title')
@@ -591,35 +607,30 @@
     meter.node.title = row.title
   }
 
-  /** The subscription's windows (account-wide), then the context of the conversation in view (one session's). */
-  function renderUsage(now) {
-    const rows = windowRows(now)
-    const current = sessions.find(session => session.sessionId === currentId)
-    const context = contextOf(current)
-    const problem = planProblem(now)
-    // the note only when it explains something on screen: a reading gone stale, or none at all
-    const isNoteShown = problem !== undefined && (rows.length === 0 || rows.some(row => now - row.at > STALE_MS))
-    const hasPlanPart = rows.length > 0 || isNoteShown
-
-    usage.hidden = !hasPlanPart && context === undefined
-    if (usage.hidden) {
-      return
+  /** One account's part of the usage block: its head, meters, note and extra-usage line, in order. */
+  function drawAccount(block, index, isMany, now) {
+    const { account, rows, problem, isNoteShown } = block
+    const parts = partsFor(account.id)
+    // with two accounts each head says whose it is, and a rule parts the second from the first
+    const headClass = `usage-head${isMany ? ' is-account' : ''}${isMany && account.isCurrent ? ' is-current' : ''}${index > 0 ? ' is-divided' : ''}`
+    if (parts.head.className !== headClass) {
+      parts.head.className = headClass
+    }
+    parts.name.hidden = !isMany
+    if (isMany) {
+      setText(parts.name, accountName(account))
+      parts.name.title = [
+        accountName(account),
+        ...(account.isCurrent ? ['目前對話用的是這個帳號'] : []),
+        account.sessions.length > 0 ? `開著的對話：${account.sessions.join('、')}` : '這個帳號沒有開著的對話',
+      ].join('\n')
     }
 
-    const keys = new Set([...rows.map(row => row.key), ...(context === undefined ? [] : [CONTEXT_KEY])])
-    for (const [key, meter] of meterByKey) {
-      if (!keys.has(key)) {
-        meter.node.remove()
-        meterByKey.delete(key)
-      }
-    }
-
-    usageHead.hidden = !hasPlanPart
     if (rows.length > 0) {
       const freshest = Math.max(...rows.map(row => row.at))
-      setText(usageFresh, `${shortAgo(now - freshest)}更新`)
-      usageFresh.title = [
-        ...usageData.list.map(
+      setText(parts.fresh, `${shortAgo(now - freshest)}更新`)
+      parts.fresh.title = [
+        ...account.list.map(
           window => `${window.label}：${window.source === 'plan' ? '用量查詢' : '回覆附帶'}，${clockOf(window.at)}`,
         ),
         '',
@@ -629,27 +640,68 @@
         '換帳號或期間重置後，舊的讀數會立刻作廢。',
       ].join('\n')
     } else {
-      setText(usageFresh, '等待額度讀數')
-      usageFresh.title = ''
+      setText(parts.fresh, '等待額度讀數')
+      parts.fresh.title = ''
     }
     for (const row of rows) {
       drawMeter(meterFor(row.key), row)
     }
 
-    usageNote.hidden = !isNoteShown
+    parts.note.hidden = !isNoteShown
     if (isNoteShown) {
-      setText(usageNote, problem.text)
-      usageNote.title = problem.detail
+      setText(parts.note, problem.text)
+      parts.note.title = problem.detail
     }
 
-    const extra = usageData.extra
-    usageExtra.hidden = !extra
+    const extra = account.extra
+    parts.extra.hidden = !extra
     if (extra) {
       const used = extra.usedCredits === null ? '—' : money(extra.usedCredits, extra.currency)
       const limit = extra.monthlyLimit === null ? '' : ` / ${money(extra.monthlyLimit, extra.currency)}`
       const share = extra.percent === null ? '' : `（${Math.round(extra.percent)}%）`
-      setText(usageExtra, `額外用量 ${used}${limit}${share}`)
+      setText(parts.extra, `額外用量 ${used}${limit}${share}`)
     }
+
+    return [parts.head, ...rows.map(row => meterByKey.get(row.key).node), parts.note, parts.extra]
+  }
+
+  /** Each account's windows (account-wide), then the context of the conversation in view (one session's). */
+  function renderUsage(now) {
+    const isMany = usageData.accounts.length > 1
+    const blocks = usageData.accounts
+      .map(account => {
+        const rows = windowRows(account, now)
+        const problem = planProblem(account, now)
+        // the note only when it explains something on screen: a reading gone stale, or none at all
+        const isNoteShown = problem !== undefined && (rows.length === 0 || rows.some(row => now - row.at > STALE_MS))
+
+        return { account, rows, problem, isNoteShown }
+      })
+      // one account with nothing to say shows no head; beside another it still says it is waiting
+      .filter(block => block.rows.length > 0 || block.isNoteShown || isMany)
+    const current = sessions.find(session => session.sessionId === currentId)
+    const context = contextOf(current)
+    const hasPlanPart = blocks.length > 0
+
+    usage.hidden = !hasPlanPart && context === undefined
+    if (usage.hidden) {
+      return
+    }
+
+    const keys = new Set([...blocks.flatMap(block => block.rows.map(row => row.key)), ...(context === undefined ? [] : [CONTEXT_KEY])])
+    for (const [key, meter] of meterByKey) {
+      if (!keys.has(key)) {
+        meter.node.remove()
+        meterByKey.delete(key)
+      }
+    }
+    for (const id of [...accountParts.keys()]) {
+      if (!blocks.some(block => block.account.id === id)) {
+        accountParts.delete(id)
+      }
+    }
+
+    const accountNodes = blocks.flatMap((block, index) => drawAccount(block, index, isMany, now))
 
     contextHead.hidden = context === undefined
     if (context !== undefined) {
@@ -677,10 +729,7 @@
     }
 
     const wanted = [
-      usageHead,
-      ...rows.map(row => meterByKey.get(row.key).node),
-      usageNote,
-      usageExtra,
+      ...accountNodes,
       contextHead,
       ...(context === undefined ? [] : [meterByKey.get(CONTEXT_KEY).node]),
     ]
@@ -1021,7 +1070,9 @@
     const message = event.data
     if (message && message.type === 'data' && Array.isArray(message.sessions)) {
       sessions = message.sessions
-      usageData = message.usage && Array.isArray(message.usage.list) ? message.usage : { list: [] }
+      const posted = message.usage && Array.isArray(message.usage.list) ? message.usage : { list: [] }
+      // a message with no `accounts` (the preview's plain one) is one account that names none
+      usageData = Array.isArray(posted.accounts) ? posted : { ...posted, accounts: [{ ...posted, id: '', sessions: [] }] }
       currentId = typeof message.currentSessionId === 'string' ? message.currentSessionId : undefined
       isCurrentFocused = message.isCurrentFocused === true
       hasData = true

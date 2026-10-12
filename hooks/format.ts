@@ -122,6 +122,38 @@ export function parsePlanUsage(body: unknown, fetchedAt: number): PlanUsage | un
   return { fetchedAt, windows }
 }
 
+/** The subscription a session is signed in to: what tells one account's usage from another's. */
+export type PlanAccount = {
+  /** Short and safe in a file name: the start of the organization's id (the limits are the organization's). */
+  id: string
+  /** The sign-in's email, to show. */
+  label?: string
+}
+
+/**
+ * Reads the body of `GET /api/oauth/profile`: who the session's credential belongs to. Not a public
+ * API either: undefined where no id reads.
+ */
+export function parseAccount(body: unknown): PlanAccount | undefined {
+  const record = asRecord(body)
+  const account = asRecord(record?.account)
+  const uuid = asRecord(record?.organization)?.uuid ?? account?.uuid
+  const id = typeof uuid === 'string' ? uuid.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) : ''
+  if (id === '') {
+    return undefined
+  }
+  const label = [account?.email, account?.email_address, account?.display_name].find(
+    (value): value is string => typeof value === 'string' && value.trim() !== '',
+  )
+
+  return label === undefined ? { id } : { id, label: label.trim() }
+}
+
+/** The shared read's file: one per account, so two sign-ins on one machine never overwrite each other's. */
+export function planFileOf(account: PlanAccount | undefined): string {
+  return account === undefined ? 'plan.json' : `plan-${account.id}.json`
+}
+
 /**
  * The board's folder: `agent-board` under Claude Code's own folder, which is CLAUDE_CONFIG_DIR
  * where that is set and `.claude` in the home folder otherwise (USERPROFILE on Windows, HOME

@@ -75,7 +75,10 @@
     agents: [],
   }
 
-  /** The message the board gets: { multi, empty, error (the shared read refused), fallback (no Claude tab matched) }. */
+  /**
+   * The message the board gets: { multi, empty, error (the shared read refused), fallback (no Claude
+   * tab matched), accounts (a second account's sessions are open too) }.
+   */
   window.previewBoard = function (options) {
     const planAt = options.error ? at(260) : at(12)
     const source = options.error ? 'plan' : 'response'
@@ -95,11 +98,24 @@
       : options.multi
         ? [notes, rewrite, meeting, website]
         : [notes]
+    // a second sign-in on the same machine: its own windows, its own shared read
+    const other = {
+      id: 'b2c3d4e5f6a7',
+      label: 'team@example.com',
+      isCurrent: false,
+      sessions: ['整理會議紀錄'],
+      list: [
+        { key: 'five_hour', label: '5 小時工作階段', percent: 8, resetsAt: iso(2.2), at: at(41), source: 'response' },
+        { key: 'seven_day', label: '每週・所有模型', percent: 83, resetsAt: iso(31.5), at: at(41), source: 'response' },
+      ],
+      planAt: at(41),
+    }
+    const mine = { id: 'a1b2c3d4e5f6', label: 'you@example.com', isCurrent: true, sessions: sessions.map(session => session.title || 'website'), ...usage }
 
     return {
       type: 'data',
       sessions,
-      usage,
+      usage: options.accounts ? { ...usage, accounts: [mine, other] } : usage,
       currentSessionId: options.multi ? 'session-d' : 'session-a',
       isCurrentFocused: !options.fallback,
     }

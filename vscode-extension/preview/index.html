@@ -78,6 +78,7 @@
       empty: params.get('empty') === '1',
       error: params.get('error') === '1',
       fallback: params.get('fallback') === '1',
+      accounts: params.get('accounts') === '1',
     }
     const isDone = detailMode === 'done'
     window.postMessage(isDone ? window.previewBoardDone(options) : window.previewBoard(options), '*')

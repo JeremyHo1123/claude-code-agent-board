@@ -34,6 +34,7 @@ folder in `claudeDirectory()`.
 {
   "version": 1,
   "sessionId": "…", "cwd": "…", "model": "claude-…",
+  "account": { "id": "0a1b2c3d4e5f", "label": "the sign-in's email" },  // absent until the profile read answers
   "updatedAt": 0,          // ms; a session is "live" while this is under 3 minutes old
   "isClosed": false,
   "usage": {
@@ -48,10 +49,13 @@ folder in `claudeDirectory()`.
 }
 ```
 
-**`plan.json`**, one for all sessions: the shared read of the usage endpoint.
+**`plan-<account id>.json`**, one for all sessions of an account: the shared read of the usage
+endpoint. It is `plan.json` while a session does not know its account (`planFileOf`), which is also
+what mods before 0.6.0 wrote.
 
 ```jsonc
-{ "plan": { "fetchedAt": 0, "windows": [{ "key": "five_hour", "label": "…", "percent": 62, "resetsAt": "ISO" }], "extra": {} },
+{ "account": { "id": "0a1b2c3d4e5f", "label": "…" },
+  "plan": { "fetchedAt": 0, "windows": [{ "key": "five_hour", "label": "…", "percent": 62, "resetsAt": "ISO" }], "extra": {} },
   "nextAttemptAt": 0, "lastAttemptAt": 0, "lastError": { "at": 0, "status": 429 }, "failures": 1 }
 ```
 
@@ -74,11 +78,25 @@ its own request was counted, and knows nothing of what other sessions spent sinc
 taken within seconds of each other were 11%, 10% and 7%. Use within a window only grows, so
 `settleWindow` (extension) takes the highest reading of the window in force. Which window is in
 force is decided by the latest reading that names one, and replies older than the last usage read
-are left out. That is what drops stale readings after a reset or a change of account. There is no
-account id to key on: the mod API gives none.
+are left out. That is what drops stale readings after a reset or a change of account.
 
-**One usage read for all sessions.** Each session polling by itself got HTTP 429 from the endpoint
-and left the board minutes behind. Hence `plan.json`, 30 seconds between reads, and a backoff that
+**Usage: never settle two accounts together.** VS Code signed in to one account and the desktop app
+to another write into the same folder. Before 0.6.0 they shared one `plan.json` and one settling,
+and the board showed whichever account replied last. The mod API gives no account id, so the mod
+asks `GET /api/oauth/profile` through the same credential handle (`readAccount`; again every 10
+minutes, for a sign-in changed mid-session) and puts `account` in its snapshot and in its account's
+own shared file. `mergeUsage` groups every source by account id first and settles each group alone.
+A source that names no account (a session that has not reloaded the mod, or whose profile read
+fails) joins the account whose weekly window resets at the same time; what is left forms one
+unnamed account. An account with no session on the board is not shown beside one that has. An
+account whose every session runs in the desktop app is left out too, unless
+`agentBoard.usageOfDesktopApp` is on: the extension reads each session's `entrypoint` from its
+transcript (`claude-vscode`, `claude-desktop`, `cli`; every row carries it), in the same read that
+finds the title, so for the first seconds after a reload it is not known and such an account shows. The
+email is personal data: it lives in the board's files only, and `live-smoke.js` prints the id, not it.
+
+**One usage read for all sessions of an account.** Each session polling by itself got HTTP 429 from
+the endpoint and left the board minutes behind. Hence the shared file, 30 seconds between reads, and a backoff that
 doubles from 60 seconds to 10 minutes. Do not shorten the interval without measuring.
 
 **Context: ask for the breakdown.** `$.session.usage()` alone gives the last reply's figure, which

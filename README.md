@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-2a78d6">
+  <img alt="version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-2a78d6">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 or later" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -61,7 +61,7 @@ Agent Board gets around this by splitting the job in two:
 
 **A "needs you" section.** Conversations waiting for a permission or an answer, subagents gone quiet, and recent failures are grouped at the top. The status bar turns to "在等你" while a conversation waits.
 
-**Subscription usage that keeps up.** The 5-hour and weekly windows of your Claude plan, with per-model buckets and extra usage when you have them. Resets are worded as claude.ai's usage page words them. The status bar always shows `5h % · 週 %`.
+**Subscription usage that keeps up.** The 5-hour and weekly windows of your Claude plan, with per-model buckets and extra usage when you have them. Resets are worded as claude.ai's usage page words them. The status bar always shows `5h % · 週 %`. Two accounts on one machine (VS Code signed in to one, the desktop app to another) are never mixed: the board shows the account VS Code and the terminal use, and leaves out one that only the desktop app is signed in to. `agentBoard.usageOfDesktopApp` shows that one too, each account with its own meters headed by its sign-in's email.
 
 **The right conversation's context.** Each conversation's context fill, computed the way `/context` computes it. The meter follows the Claude tab you are looking at, and the status bar shows it too.
 
@@ -75,7 +75,7 @@ flowchart LR
         mod["agent-board mod<br/>(function hooks)"]
     end
     api["api.anthropic.com<br/>/api/oauth/usage"]
-    board[("~/.claude/agent-board/<br/>sessions/&lt;id&gt;.json<br/>plan.json")]
+    board[("~/.claude/agent-board/<br/>sessions/&lt;id&gt;.json<br/>plan-&lt;account&gt;.json")]
     transcripts[("~/.claude/projects/…<br/>subagent transcripts<br/>workflow run files")]
     ext["Agent Board<br/>VS Code extension"]
     ui["Sidebar board<br/>Detail panel<br/>Status bar<br/>Notifications"]
@@ -88,7 +88,7 @@ flowchart LR
 ```
 
 - **Snapshots.** The mod hooks session, turn, tool-call and agent events. It writes `sessions/<sessionId>.json` whenever something changed, at most once a second, and once a minute as a heartbeat. The file holds the subagent rows, the session's activity (working, waiting, idle), its context fill and its rate-limit readings.
-- **Usage, from two sources.** Every API reply carries rate-limit readings, which are fresh but run slightly behind. The usage endpoint that `/usage` reads is exact, so **one** session reads it for all of them every 30 seconds, through `plan.json`. Use within a window only grows, so the board shows the **highest** reading of the window in force. After a reset or a change of account, the earlier window's readings fall away at once.
+- **Usage, from two sources.** Every API reply carries rate-limit readings, which are fresh but run slightly behind. The usage endpoint that `/usage` reads is exact, so **one** session reads it for all of its account's every 30 seconds, through `plan-<account>.json`. Use within a window only grows, so the board shows the **highest** reading of the window in force. After a reset or a change of account, the earlier window's readings fall away at once. Each snapshot and each shared read names its account, and two accounts' readings are never settled together.
 - **Task details.** Claude Code already writes each subagent's transcript next to its session's. The extension reads that file while a detail is open, and again whenever it grows. It also reads workflow run files for agent labels and phases.
 - **Which conversation is "current".** VS Code does not tell one extension which Claude conversation another extension's tab shows. The board matches the focused tab's title against the title Claude Code writes into each transcript.
 
@@ -160,7 +160,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | ends with `Validation passed` |
 | Type `/agent-board` in a Claude Code conversation | it answers with the subagent board |
 | List `~/.claude/agent-board/sessions/` | one `<sessionId>.json` per open conversation, modified within the last minute |
-| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.5.1` |
+| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.6.0` |
 | Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · 週 …%` and `上下文 …%` in the status bar once a conversation has had one reply |
 
 ### Update
@@ -203,6 +203,7 @@ All of them live under `agentBoard.*` in VS Code's settings.
 |---|---|---|
 | `agentBoard.autoReveal` | `true` | Shows the board when two or more subagents run at once, without taking the keyboard |
 | `agentBoard.usageInStatusBar` | `true` | Keeps `5h % · 週 %` in the status bar; it turns yellow from 70% and red from 90% |
+| `agentBoard.usageOfDesktopApp` | `false` | Also shows the usage of an account that only the Claude desktop app is signed in to |
 | `agentBoard.contextInStatusBar` | `true` | Keeps the current conversation's context fill in the status bar |
 | `agentBoard.notify.waiting` | `true` | Notifies when a conversation has waited 15 seconds for an answer or a permission |
 | `agentBoard.notify.subagents` | `true` | Notifies when a subagent ends or fails; three or more at once fold into one |
@@ -215,7 +216,8 @@ In a terminal session the mod also answers `/agent-board` with a pane of that se
 ## What it reads and what it sends
 
 - **It reads, on your machine only:** the snapshots the mod writes, and Claude Code's own transcripts under `~/.claude/projects/` (for conversation titles and subagent details). It writes nothing there.
-- **It makes one kind of network request:** `GET https://api.anthropic.com/api/oauth/usage`, the endpoint Claude Code's `/usage` reads. The request goes through Claude Code's credential handle (`$.session.authorize()`), so the token never reaches the mod's code. All sessions together make at most one request every 30 seconds, and back off for up to 10 minutes when refused.
+- **It makes two kinds of network request,** both to `api.anthropic.com`: `GET /api/oauth/usage`, the endpoint Claude Code's `/usage` reads, and `GET /api/oauth/profile`, which says whose credential the session holds. The requests go through Claude Code's credential handle (`$.session.authorize()`), so the token never reaches the mod's code. All sessions of an account together read the usage at most once every 30 seconds, and back off for up to 10 minutes when refused; each session asks for the profile once every 10 minutes.
+- **It keeps the account's email on your machine.** The profile's email and the start of its organization id go into the board's files, to keep two accounts' usage apart and to head each account's meters. They are sent nowhere.
 - **No telemetry.** Nothing else leaves your machine.
 
 `claude plugin validate` prints everything the mod hooks, calls and reads, so you can check this yourself.

@@ -174,6 +174,28 @@ body.vscode-high-contrast-light {
   content: "⚠";
 }
 
+/* two accounts on the board: each head says whose usage it is, between the title and how fresh it is */
+.usage-head.is-account {
+  min-width: 0;
+}
+
+.usage-head.is-account .usage-title,
+.usage-head.is-account .usage-fresh {
+  flex: none;
+}
+
+/* the long email gives way; the account of the conversation in view reads strongest */
+.usage-head.is-account .usage-session {
+  flex: 1;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.usage-head.is-account.is-current .usage-session {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* the current conversation's sub-head: what is measured, then whose */
 .usage-head.is-sub {
   justify-content: flex-start;
@@ -185,7 +207,7 @@ body.vscode-high-contrast-light {
   flex: none;
 }
 
-/* under the subscription's meters, a rule marks the change from account-wide to one conversation */
+/* a rule marks the change from one account to the next, and from account-wide to one conversation */
 .usage-head.is-divided {
   margin-top: 1px;
   padding-top: 10px;

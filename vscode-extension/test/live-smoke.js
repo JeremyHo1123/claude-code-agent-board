@@ -34,11 +34,14 @@ async function main() {
   const now = Date.now()
   const age = at => `${Math.round((now - at) / 1000)}s`
 
-  console.log('usage windows:')
-  for (const window of payload.usage.list) {
-    console.log(`  ${window.label.padEnd(10)} ${String(window.percent).padStart(5)}%  from ${window.source.padEnd(8)} ${age(window.at)} ago`)
+  for (const account of payload.usage.accounts) {
+    // the id only: the label is the sign-in's email
+    console.log(`usage windows of account ${account.id || '(not known)'}${account.isCurrent ? ' (current)' : ''}, ${account.sessions.length} open:`)
+    for (const window of account.list) {
+      console.log(`  ${window.label.padEnd(10)} ${String(window.percent).padStart(5)}%  from ${window.source.padEnd(8)} ${age(window.at)} ago`)
+    }
+    console.log(`  planError: ${JSON.stringify(account.planError)}  planNextAt in ${account.planNextAt ? Math.round((account.planNextAt - now) / 1000) + 's' : '-'}`)
   }
-  console.log(`  planError: ${JSON.stringify(payload.usage.planError)}  planNextAt in ${payload.usage.planNextAt ? Math.round((payload.usage.planNextAt - now) / 1000) + 's' : '-'}`)
   console.log(`current: ${payload.currentSessionId} focused=${payload.isCurrentFocused}`)
   console.log('sessions:')
   for (const session of payload.sessions) {

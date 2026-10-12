@@ -266,6 +266,130 @@ async function main() {
     assert.deepEqual(settle([reply(3, 1_000_000, R2), reply(90, 990_000, R1)], undefined), [3, 'response', 1_000_000, R2])
   }
 
+  // ── two accounts on one machine: each settled on its own ──────
+  {
+    const FIVE = '2030-01-01T00:00:00.000Z' // both 5-hour windows reset together, as two sign-ins primed at once do
+    const WEEK_A = '2030-01-03T12:00:00.000Z'
+    const WEEK_B = '2030-01-04T06:00:00.000Z'
+    const A = { id: 'aaaa1111', label: 'a@example.com' }
+    const B = { id: 'bbbb2222', label: 'b@example.com' }
+    const at = now - 60_000
+    const session = (sessionId, account, five, week, weekReset, readAt = at) => ({
+      sessionId,
+      cwd: `/home/tester/${sessionId}`,
+      updatedAt: now,
+      isClosed: false,
+      ...(account ? { account } : {}),
+      usage: {
+        rateLimits: [
+          { kind: 'five_hour', percentUsed: five, resetsAt: FIVE },
+          { kind: 'seven_day', percentUsed: week, resetsAt: weekReset },
+        ],
+        rateLimitsAt: readAt,
+      },
+      agents: [],
+    })
+    const read = (account, five, week, weekReset, fetchedAt, extra = {}) => ({
+      ...(account ? { account } : {}),
+      plan: {
+        fetchedAt,
+        windows: [
+          { key: 'five_hour', label: '5 小時工作階段', percent: five, resetsAt: FIVE },
+          { key: 'seven_day', label: '每週・所有模型', percent: week, resetsAt: weekReset },
+        ],
+      },
+      nextAttemptAt: fetchedAt + 30_000,
+      lastAttemptAt: fetchedAt,
+      ...extra,
+    })
+    const figures = account => account.list.map(window => [window.key, window.percent, window.resetsAt])
+
+    // account B's reply is the newest and its 5-hour figure the highest: neither reaches account A's windows
+    const merged = mergeUsage(
+      [session('vscode', A, 1, 37, WEEK_A), session('desktop', B, 9, 34, WEEK_B, now - 5_000)],
+      [read(A, 2, 37, WEEK_A, now - 90_000), read(B, 4, 33, WEEK_B, now - 90_000, { lastError: { at: now - 20_000, status: 429 } })],
+      'vscode',
+    )
+    assert.deepEqual(merged.accounts.map(account => [account.id, account.label, account.isCurrent, account.sessions]), [
+      ['aaaa1111', 'a@example.com', true, ['vscode']],
+      ['bbbb2222', 'b@example.com', false, ['desktop']],
+    ])
+    assert.deepEqual(figures(merged.accounts[0]), [['five_hour', 2, FIVE], ['seven_day', 37, WEEK_A]])
+    assert.deepEqual(figures(merged.accounts[1]), [['five_hour', 9, FIVE], ['seven_day', 34, WEEK_B]])
+    // each account's shared read fails or works on its own
+    assert.equal(merged.accounts[0].planError, undefined)
+    assert.deepEqual(merged.accounts[1].planError, { at: now - 20_000, status: 429 })
+    // the top level is the account of the conversation in view
+    assert.deepEqual(figures(merged), figures(merged.accounts[0]))
+    assert.deepEqual(figures(mergeUsage([session('vscode', A, 1, 37, WEEK_A), session('desktop', B, 9, 34, WEEK_B)], [], 'desktop')), [
+      ['five_hour', 9, FIVE],
+      ['seven_day', 34, WEEK_B],
+    ])
+
+    // a session that has not learnt its account yet joins the one whose weekly window it shares
+    const joining = mergeUsage(
+      [session('vscode', A, 1, 37, WEEK_A), session('desktop', B, 9, 34, WEEK_B), session('reloading', undefined, 6, 38, WEEK_A, now - 1_000)],
+      [],
+      'vscode',
+    )
+    assert.deepEqual(joining.accounts.map(account => [account.id, account.sessions.length]), [['aaaa1111', 2], ['bbbb2222', 1]])
+    assert.deepEqual(figures(joining.accounts[0]), [['five_hour', 6, FIVE], ['seven_day', 38, WEEK_A]])
+
+    // a previous mod's shared read: joined while fresh, left out once stale beside a named one; never an account of its own
+    const fresh = mergeUsage([session('vscode', A, 1, 37, WEEK_A)], [read(A, 2, 37, WEEK_A, now - 90_000), read(undefined, 3, 39, WEEK_A, now - 30_000)], 'vscode')
+    assert.deepEqual(figures(fresh.accounts[0]), [['five_hour', 3, FIVE], ['seven_day', 39, WEEK_A]])
+    const stale = mergeUsage(
+      [session('vscode', A, 1, 37, WEEK_A)],
+      [read(A, 2, 37, WEEK_A, now - 90_000), read(undefined, 50, 60, WEEK_B, now - 3_600_000)],
+      'vscode',
+    )
+    assert.deepEqual(stale.accounts.map(account => account.id), ['aaaa1111'])
+    assert.deepEqual(figures(stale.accounts[0]), [['five_hour', 2, FIVE], ['seven_day', 37, WEEK_A]])
+
+    // an account whose sessions are all gone leaves its read behind: not shown beside one in use
+    const gone = mergeUsage([session('vscode', A, 1, 37, WEEK_A)], [read(A, 2, 37, WEEK_A, now - 90_000), read(B, 4, 33, WEEK_B, now - 90_000)], 'vscode')
+    assert.deepEqual(gone.accounts.map(account => account.id), ['aaaa1111'])
+
+    // with no account known anywhere, one unnamed account: the single settling it always was
+    const unknown = mergeUsage([session('one', undefined, 1, 37, WEEK_A), session('two', undefined, 9, 34, WEEK_B, now - 5_000)], [], 'one')
+    assert.deepEqual(unknown.accounts.map(account => account.id), [''])
+
+    // an account only the desktop app is signed in to is left out, named or not, unless asked for
+    const inVscode = { ...session('vscode', A, 1, 37, WEEK_A), entrypoint: 'claude-vscode' }
+    const inDesktop = account => ({ ...session('desktop', account, 9, 34, WEEK_B, now - 5_000), entrypoint: 'claude-desktop' })
+    const reads = [read(A, 2, 37, WEEK_A, now - 90_000), read(B, 4, 33, WEEK_B, now - 90_000)]
+    for (const account of [B, undefined]) {
+      const quiet = mergeUsage([inVscode, inDesktop(account)], reads, 'desktop')
+      assert.deepEqual(quiet.accounts.map(one => one.id), ['aaaa1111'])
+      assert.deepEqual(figures(quiet), [['five_hour', 2, FIVE], ['seven_day', 37, WEEK_A]])
+    }
+    assert.deepEqual(mergeUsage([inVscode, inDesktop(B)], reads, 'vscode', true).accounts.map(one => one.id), ['aaaa1111', 'bbbb2222'])
+    // the desktop app signed in to VS Code's own account spends from the same windows: its readings count
+    assert.deepEqual(figures(mergeUsage([inVscode, { ...inDesktop(A), usage: session('x', A, 9, 40, WEEK_A, now - 5_000).usage }], reads, 'vscode')), [
+      ['five_hour', 9, FIVE],
+      ['seven_day', 40, WEEK_A],
+    ])
+    // a dead session beside the desktop app's, with no reading and no transcript found, does not keep the account in view
+    const dead = { sessionId: 'dead', cwd: '/home/tester/dead', updatedAt: now - 3_600_000, isClosed: false, agents: [] }
+    assert.deepEqual(mergeUsage([inVscode, inDesktop(undefined), dead], [read(A, 2, 37, WEEK_A, now - 90_000)], 'vscode').accounts.map(one => one.id), [
+      'aaaa1111',
+    ])
+    // with only the desktop app's conversations open there is no usage to show
+    assert.deepEqual(mergeUsage([inDesktop(B)], reads, 'desktop').accounts, [])
+
+    // a threshold crossed on the other account says whose window it is
+    const board = new AgentBoard({ subscriptions: [] })
+    const poll = five => {
+      board.usage = mergeUsage([session('vscode', A, 1, 37, WEEK_A), session('desktop', B, five, 34, WEEK_B)], [], 'vscode')
+      board.notify([])
+    }
+    poll(50)
+    poll(85)
+    const crossed = take()
+    assert.equal(crossed.length, 1, JSON.stringify(crossed))
+    assert.ok(has(crossed, 'warning', '【b@example.com】5 小時工作階段已用 85%'), JSON.stringify(crossed))
+  }
+
   // ── tab labels and transcript titles ──────────────────────────
   {
     assert.equal(tabLabelOf('整理讀書筆記'), '整理讀書筆記')
@@ -365,6 +489,13 @@ async function main() {
     // the focused session closes: back to the settled pick, which is re-chosen only when it is gone
     sessions = sessions.map(session => (session.sessionId === 'c' ? { ...session, isClosed: true } : session))
     assert.deepEqual(board.currentSessionId(sessions), { sessionId: 'd', isFocused: false })
+
+    // a conversation in the desktop app is never the current one, however lately it acted: it has no tab here
+    now += 1_000
+    const desktop = { ...make('e', now), entrypoint: 'claude-desktop' }
+    sessions = sessions.map(session => (session.sessionId === 'd' ? { ...session, isClosed: true } : session))
+    assert.notEqual(board.currentSessionId([...sessions, desktop]).sessionId, 'e')
+    assert.deepEqual(new AgentBoard({ subscriptions: [] }).currentSessionId([desktop]), { sessionId: undefined, isFocused: false })
   }
 
   // ── the status bar's context item: the current conversation's, the others in its tooltip ──

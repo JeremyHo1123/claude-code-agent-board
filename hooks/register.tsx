@@ -10,12 +10,14 @@ import {
   describeCall,
   formatElapsed,
   orderRows,
+  parseAccount,
   parsePlanUsage,
+  planFileOf,
   renderMarkdown,
   rowDetail,
   statusIcon,
 } from './format'
-import type { PlanUsage, SessionActivity } from './format'
+import type { PlanAccount, PlanUsage, SessionActivity } from './format'
 
 /**
  * Where the board's files go, read by the Agent Board VS Code extension: `agent-board` under
@@ -23,8 +25,9 @@ import type { PlanUsage, SessionActivity } from './format'
  * no mod pane (it never attaches as a ui_render surface), so there the board is that extension's
  * webview. Outside every project, so the rewrites never reach a repository.
  *
- * `sessions/<sessionId>.json` is one snapshot per session; `plan.json` the read of the
- * subscription's usage all sessions share. Undefined until first asked; null with no home known.
+ * `sessions/<sessionId>.json` is one snapshot per session; `plan-<account>.json` the read of the
+ * subscription's usage all sessions of that account share (`plan.json` while the account is not
+ * known). Undefined until first asked; null with no home known.
  */
 let boardRoot: string | null | undefined
 const PANE = 'agent-board'
@@ -53,11 +56,19 @@ const LIST_STATUS: Readonly<Record<string, AgentBoardStatus>> = {
  */
 const PLAN_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 /**
- * Every session shares one read through this file (under the board's folder): whichever finds it
- * due claims it, reads, and writes the answer back. One read per interval however many Claude tabs
- * are open; each session polling on its own got the endpoint to refuse most of them.
+ * Who the credential belongs to, from the endpoint Claude Code's own sign-in reads. Sessions of two
+ * accounts can run on one machine (VS Code signed in to one, the desktop app to another), and their
+ * usage must not be merged: each account has its own shared read, and each snapshot names its account.
  */
-const PLAN_FILE = 'plan.json'
+const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
+/** Asked again this often, for a sign-in changed mid-session; sooner while it has not answered yet. */
+const ACCOUNT_RECHECK_MS = 600_000
+const ACCOUNT_RETRY_MS = 60_000
+/**
+ * Every session of an account shares one read through `planFileOf(account)` (under the board's
+ * folder): whichever finds it due claims it, reads, and writes the answer back. One read per interval
+ * however many Claude tabs are open; each session polling on its own got the endpoint to refuse most of them.
+ */
 /** One read across all sessions this often; while Claude works, each API response's own readings are fresher. */
 const PLAN_INTERVAL_MS = 30_000
 /**
@@ -72,6 +83,8 @@ const PLAN_CHECK_MS = 5_000
 const HEARTBEAT_MS = 60_000
 
 type SharedPlan = {
+  /** Whose usage this is; absent while the account is not known. */
+  account?: PlanAccount
   plan?: PlanUsage
   /** No session reads before this time: the next interval, or a backoff after a failure. */
   nextAttemptAt: number
@@ -85,6 +98,9 @@ type SharedPlan = {
 let isDirty = false
 let isFlushing = false
 let planCheckedAt = 0
+/** The account this session is signed in to, once the profile endpoint has said; and when to ask next. */
+let account: PlanAccount | undefined
+let accountNextAt = 0
 /** When this session last saw an API response arrive (a tool call follows one): how fresh its rate-limit readings are. */
 let lastResponseAt = 0
 /** Module state, as the board reads it: a reload starts it over as idle, the next turn corrects it. */
@@ -167,12 +183,44 @@ async function boardPath($: EngineInterface, name: string): Promise<string> {
   return `${boardRoot}/${name}`
 }
 
-async function readSharedPlan($: EngineInterface): Promise<SharedPlan | undefined> {
+async function readSharedPlan($: EngineInterface, name: string): Promise<SharedPlan | undefined> {
   try {
-    return JSON.parse(await $.fs.read(await boardPath($, PLAN_FILE))) as SharedPlan
+    return JSON.parse(await $.fs.read(await boardPath($, name))) as SharedPlan
   } catch {
     return undefined
   }
+}
+
+/**
+ * The account behind this session's credential, asked when due. A failed read keeps what was known:
+ * the usage then goes on under that account, or under none until the first answer.
+ */
+async function readAccount($: EngineInterface, at: number): Promise<PlanAccount | undefined> {
+  if (at < accountNextAt) {
+    return account
+  }
+  accountNextAt = at + ACCOUNT_RETRY_MS
+  try {
+    const auth = await $.session.authorize()
+    if (auth === null || auth.kind !== 'bearer') {
+      return account
+    }
+    const response = await $.http.fetch(PROFILE_URL, {
+      auth: auth.handle,
+      headers: { 'anthropic-beta': 'oauth-2025-04-20', 'Content-Type': 'application/json' },
+    })
+    const parsed = response.ok ? parseAccount(JSON.parse(response.text)) : undefined
+    if (parsed !== undefined) {
+      // the snapshot names the account: written again when it is learnt, or changes
+      isDirty = isDirty || parsed.id !== account?.id || parsed.label !== account?.label
+      account = parsed
+      accountNextAt = at + ACCOUNT_RECHECK_MS
+    }
+  } catch {
+    // asked again after the retry interval
+  }
+
+  return account
 }
 
 /** One read of the endpoint: the windows, or the failure and how long everyone should wait. */
@@ -220,14 +268,16 @@ async function maybeReadPlan($: EngineInterface): Promise<void> {
   }
   planCheckedAt = at
 
-  const shared = await readSharedPlan($)
+  const who = await readAccount($, at)
+  const name = planFileOf(who)
+  const shared = await readSharedPlan($, name)
   if (shared !== undefined && at < shared.nextAttemptAt) {
     return
   }
 
   // claimed before the request, so another session checking now skips this round
-  const file = await boardPath($, PLAN_FILE)
-  const claimed: SharedPlan = { ...shared, nextAttemptAt: at + PLAN_INTERVAL_MS, lastAttemptAt: at }
+  const file = await boardPath($, name)
+  const claimed: SharedPlan = { ...shared, account: who, nextAttemptAt: at + PLAN_INTERVAL_MS, lastAttemptAt: at }
   await $.fs.write(file, JSON.stringify(claimed))
   const outcome = await fetchPlan($, at, shared?.failures ?? 0)
   await $.fs.write(file, JSON.stringify({ ...claimed, ...outcome }))
@@ -272,6 +322,7 @@ async function writeSnapshot($: EngineInterface, ending?: { sessionId: string })
       sessionId,
       cwd,
       model,
+      account,
       updatedAt: at,
       isClosed: ending !== undefined,
       usage:

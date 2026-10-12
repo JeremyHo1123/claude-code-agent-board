@@ -107,10 +107,10 @@ function settleWindow(key, all) {
 }
 
 /**
- * The subscription's windows, settled from the shared claude.ai read (plan.json, one for all
- * sessions) and the rate-limit readings the API replies carried to each session.
+ * One account's windows, settled from its sources: the shared claude.ai reads (`shared`, with their
+ * `plan`) and its sessions (`usage`: the rate-limit readings the API replies carried to each).
  */
-function mergeUsage(sessions, shared) {
+function settleSources(sources) {
   /** key -> every reading of that window */
   const readings = new Map()
   const add = reading => {
@@ -141,13 +141,12 @@ function mergeUsage(sessions, shared) {
       })
     }
   }
-  takePlan(shared && shared.plan)
-  // a session still on the previous mod reads for itself, into its own snapshot: a source too, until it reloads
-  for (const session of sessions) {
-    takePlan(session.plan)
+  // a session still on a mod from before the shared read carries its own, in its snapshot: a source too
+  for (const source of sources) {
+    takePlan(source.plan)
   }
-  for (const session of sessions) {
-    const usage = session.usage
+  for (const source of sources) {
+    const usage = source.usage
     if (!usage || !Array.isArray(usage.rateLimits) || typeof usage.rateLimitsAt !== 'number') {
       continue
     }
@@ -166,6 +165,11 @@ function mergeUsage(sessions, shared) {
 
     return index < 0 ? WINDOW_ORDER.length : index
   }
+  // the read being polled now speaks for the account, should a previous mod's file lie beside it
+  const shared = sources
+    .map(source => source.shared)
+    .filter(Boolean)
+    .sort((a, b) => (b.lastAttemptAt || 0) - (a.lastAttemptAt || 0))[0]
 
   return {
     // a stable sort: the 5-hour and weekly windows first, the rest in the plan's own order
@@ -176,6 +180,132 @@ function mergeUsage(sessions, shared) {
     planError: shared && shared.lastError ? shared.lastError : undefined,
     planNextAt: shared && typeof shared.nextAttemptAt === 'number' ? shared.nextAttemptAt : undefined,
   }
+}
+
+/** An account as a snapshot or a shared read names it: `{ id, label }`, the label where there is one. */
+function accountOf(value) {
+  return value && typeof value.id === 'string' && value.id !== ''
+    ? { id: value.id, label: typeof value.label === 'string' && value.label !== '' ? value.label : undefined }
+    : undefined
+}
+
+/** When a source's weekly window resets: what ties a source that names no account to one that does. */
+function weekOf(source) {
+  const asked = source.plan && Array.isArray(source.plan.windows) ? source.plan.windows.find(window => window.key === 'seven_day') : undefined
+  const replied =
+    source.usage && Array.isArray(source.usage.rateLimits) ? source.usage.rateLimits.find(limit => limit.kind === 'seven_day') : undefined
+
+  return isoOf((asked && asked.resetsAt) || (replied && replied.resetsAt))
+}
+
+/** A shared read that names no account (a previous mod's) is left out once it is this old and a named one exists. */
+const UNNAMED_READ_MS = 30 * 60_000
+
+/**
+ * The subscription usage of every account with a session on the board. `shared` is the shared
+ * claude.ai reads (one file per account; one object or a list), each session carries its replies'
+ * readings, and both name their account once the mod has learnt it. Two accounts' figures are never
+ * settled together: VS Code signed in to one and the desktop app to another once showed whichever
+ * replied last.
+ *
+ * A source that names no account joins the account whose weekly window resets at the same time;
+ * what is left forms one unnamed account, so with no account known anywhere this is the single
+ * settling it always was.
+ *
+ * An account only the Claude desktop app is signed in to (every session of it says so, by its
+ * `entrypoint`) is left out unless `isDesktopShown`: the board lives in VS Code, and shows the
+ * subscription VS Code and the terminal spend from.
+ *
+ * Returns `accounts` (named ones by label, the unnamed one last), and at the top level the windows
+ * of the account `currentSessionId` belongs to (the first account's where it belongs to none).
+ */
+function mergeUsage(sessions, shared, currentSessionId, isDesktopShown = false) {
+  const sources = [
+    ...(Array.isArray(shared) ? shared : [shared])
+      .filter(Boolean)
+      .map(one => ({ account: accountOf(one.account), plan: one.plan, shared: one })),
+    ...sessions.map(session => ({ account: accountOf(session.account), plan: session.plan, usage: session.usage, session })),
+  ]
+  /** id -> { id, label, sources } */
+  const named = new Map()
+  const unnamed = []
+  for (const source of sources) {
+    if (source.account === undefined) {
+      unnamed.push(source)
+      continue
+    }
+    const known = named.get(source.account.id)
+    if (known === undefined) {
+      named.set(source.account.id, { id: source.account.id, label: source.account.label, sources: [source] })
+    } else {
+      known.label = known.label || source.account.label
+      known.sources.push(source)
+    }
+  }
+
+  const now = Date.now()
+  const hasNamedRead = [...named.values()].some(group => group.sources.some(source => source.shared && source.plan))
+  const rest = { id: '', label: undefined, sources: [] }
+  for (const source of unnamed) {
+    const isFresh = source.plan && now - source.plan.fetchedAt < UNNAMED_READ_MS
+    if (source.shared && hasNamedRead && !isFresh) {
+      continue
+    }
+    const week = weekOf(source)
+    const home =
+      week === undefined
+        ? undefined
+        : [...named.values()].find(group => group.sources.some(other => isSameReset(weekOf(other), week)))
+    ;(home || rest).sources.push(source)
+  }
+
+  let groups = [...named.values(), rest]
+    .filter(group => group.sources.length > 0)
+    .map(group => ({ ...group, settled: settleSources(group.sources) }))
+  // an account whose sessions are all gone leaves its shared read behind: not shown beside one in use
+  const hasSession = group => group.sources.some(source => source.session)
+  if (groups.some(hasSession)) {
+    groups = groups.filter(hasSession)
+  }
+  if (!isDesktopShown) {
+    groups = groups.filter(group => {
+      const own = group.sources.filter(source => source.session)
+      // the sessions whose readings these are say whose account it is; a dead session with none says nothing
+      const reading = own.filter(source => source.usage && Array.isArray(source.usage.rateLimits) && source.usage.rateLimits.length > 0)
+      const known = (reading.length > 0 ? reading : own).map(source => source.session.entrypoint).filter(Boolean)
+
+      return known.length === 0 || known.some(entrypoint => entrypoint !== DESKTOP_ENTRYPOINT)
+    })
+  }
+  // sessions that have not learnt their account yet, with no reading of their own: nothing to show for them
+  if (groups.length > 1) {
+    groups = groups.filter(group => group.id !== '' || group.settled.list.length > 0)
+  }
+  groups.sort((a, b) => (a.id === '') - (b.id === '') || String(a.label || a.id).localeCompare(String(b.label || b.id)))
+
+  const accounts = groups.map(group => ({
+    id: group.id,
+    label: group.label,
+    isCurrent: currentSessionId !== undefined && group.sources.some(source => source.session && source.session.sessionId === currentSessionId),
+    /** The live conversations signed in to it, by name. */
+    sessions: group.sources.filter(source => source.session && isLive(source.session, now)).map(source => nameOf(source.session)),
+    ...group.settled,
+  }))
+  const primary = accounts.find(account => account.isCurrent) || accounts[0]
+
+  return {
+    list: primary ? primary.list : [],
+    extra: primary ? primary.extra : undefined,
+    planAt: primary ? primary.planAt : undefined,
+    planError: primary ? primary.planError : undefined,
+    planNextAt: primary ? primary.planNextAt : undefined,
+    accounts,
+  }
+}
+
+/** What an account is called where two are shown: its sign-in's email, else that it is not known. */
+function accountName(account) {
+  return account.label || (account.id === '' ? '未辨識的帳號' : `帳號 ${account.id.slice(0, 6)}`)
 }
 
 const SOURCE_LABEL = { plan: '查詢', response: '回應' }
@@ -253,6 +383,16 @@ function titlesIn(buffer) {
 
   return found
 }
+
+/** The program a stretch of transcript was written from: every row of a session carries the same `entrypoint`. */
+function entrypointIn(buffer) {
+  const match = /"entrypoint":"([^"\\]+)"/.exec(buffer.toString('latin1'))
+
+  return match === null ? undefined : match[1]
+}
+
+/** The entrypoint of a conversation in the Claude desktop app, which signs in apart from VS Code and the terminal. */
+const DESKTOP_ENTRYPOINT = 'claude-desktop'
 
 /**
  * The label VS Code's Claude extension gives a conversation's tab: the title, cut to 24 characters
@@ -743,16 +883,16 @@ class AgentBoard {
     this.waitNotified = new Set()
     /** Per usage window: the highest threshold crossed, and the reset it belongs to. */
     this.usageLevels = new Map()
-    /** The shared claude.ai read (plan.json) and the mtime it was read at. */
-    this.shared = undefined
-    this.sharedMtime = 0
+    /** The shared claude.ai reads, one file per account: file name -> { mtime, data }; and their data as a list. */
+    this.sharedFiles = new Map()
+    this.shared = []
     /** sessionId -> { path, size, custom, ai, isScanned, checkedAt, soughtAt }: each session's titles, from its transcript. */
     this.titles = new Map()
     /** The session whose Claude tab was last focused, matched by its label. */
     this.focusedSessionId = undefined
     /** With no tab matched: the session the context meter settled on, kept while it lives. */
     this.pickedSessionId = undefined
-    this.usage = { list: [] }
+    this.usage = { list: [], accounts: [] }
     /** Workflow run files: path -> { mtimeMs, run }; and per session, agentId -> the run's word on that agent. */
     this.workflowRuns = new Map()
     this.workflowAgents = new Map()
@@ -1167,17 +1307,34 @@ ${tags}
 </html>`
   }
 
+  /** Reads the shared reads that changed: `plan-<account>.json` per account, `plan.json` where none is known. */
   async readShared() {
-    const file = path.join(path.dirname(dataDirectory()), 'plan.json')
+    const directory = path.dirname(dataDirectory())
+    let names
     try {
-      const stat = await fs.promises.stat(file)
-      if (stat.mtimeMs !== this.sharedMtime) {
-        this.shared = JSON.parse(await fs.promises.readFile(file, 'utf8'))
-        this.sharedMtime = stat.mtimeMs
-      }
+      names = (await fs.promises.readdir(directory)).filter(name => /^plan(-[a-z0-9]+)?\.json$/.test(name))
     } catch {
-      // missing until a session's first read, or caught mid-write
+      // missing until a session's first read
+      return
     }
+    for (const name of names) {
+      try {
+        const file = path.join(directory, name)
+        const stat = await fs.promises.stat(file)
+        const known = this.sharedFiles.get(name)
+        if (known === undefined || stat.mtimeMs !== known.mtime) {
+          this.sharedFiles.set(name, { mtime: stat.mtimeMs, data: JSON.parse(await fs.promises.readFile(file, 'utf8')) })
+        }
+      } catch {
+        // caught mid-write: the previous read stands until the next poll
+      }
+    }
+    for (const name of [...this.sharedFiles.keys()]) {
+      if (!names.includes(name)) {
+        this.sharedFiles.delete(name)
+      }
+    }
+    this.shared = [...this.sharedFiles.values()].map(entry => entry.data)
   }
 
   /**
@@ -1222,7 +1379,9 @@ ${tags}
         const from = isAppended
           ? Math.max(0, entry.size - TITLE_OVERLAP_BYTES)
           : Math.max(0, stat.size - TITLE_TAIL_BYTES)
-        let found = titlesIn(await readRange(entry.path, from, stat.size))
+        const stretch = await readRange(entry.path, from, stat.size)
+        entry.entrypoint = entry.entrypoint || entrypointIn(stretch)
+        let found = titlesIn(stretch)
         if (!isAppended && !hasTitle && found.custom === undefined && found.ai === undefined && from > 0 && !entry.isScanned) {
           entry.isScanned = true
           found = titlesIn(await readRange(entry.path, 0, stat.size))
@@ -1240,6 +1399,13 @@ ${tags}
     const entry = this.titles.get(sessionId)
 
     return entry === undefined ? undefined : entry.custom || entry.ai
+  }
+
+  /** The program a session runs in, as its transcript says ("claude-vscode", "claude-desktop", "cli"); undefined until read. */
+  entrypointOf(sessionId) {
+    const entry = this.titles.get(sessionId)
+
+    return entry === undefined ? undefined : entry.entrypoint
   }
 
   /**
@@ -1289,11 +1455,16 @@ ${tags}
   /**
    * The session the context meter shows: the focused Claude tab's while it is live; else, with no
    * tab matched, the one shown before, and only when that one is gone the live session that acted
-   * last — so the meter never hops between sessions as they take turns working.
+   * last — so the meter never hops between sessions as they take turns working. A conversation in
+   * the desktop app is never the one, unless `agentBoard.usageOfDesktopApp` is on: it has no tab
+   * here, and its meter would stand in for a conversation that is not in this window.
    */
   currentSessionId(sessions) {
     const now = Date.now()
-    const live = sessions.filter(session => isLive(session, now))
+    const isDesktopShown = vscode.workspace.getConfiguration('agentBoard').get('usageOfDesktopApp', false)
+    const live = sessions.filter(
+      session => isLive(session, now) && (isDesktopShown || session.entrypoint !== DESKTOP_ENTRYPOINT),
+    )
     const isLiveId = id => id !== undefined && live.some(session => session.sessionId === id)
     if (isLiveId(this.focusedSessionId)) {
       return { sessionId: this.focusedSessionId, isFocused: true }
@@ -1324,12 +1495,14 @@ ${tags}
     // each snapshot with its title, when the transcript has one, and its workflow agents named
     const sessions = this.sessions().map(session => {
       const title = this.titleOf(session.sessionId)
+      const entrypoint = this.entrypointOf(session.sessionId)
       const agents = session.agents.map(agent => this.withWorkflow(session.sessionId, agent))
 
-      return { ...session, ...(title === undefined ? {} : { title }), agents }
+      return { ...session, ...(title === undefined ? {} : { title }), ...(entrypoint === undefined ? {} : { entrypoint }), agents }
     })
-    this.usage = mergeUsage(sessions, this.shared)
     const current = this.currentSessionId(sessions)
+    const isDesktopShown = vscode.workspace.getConfiguration('agentBoard').get('usageOfDesktopApp', false)
+    this.usage = mergeUsage(sessions, this.shared, current.sessionId, isDesktopShown)
     const payload = JSON.stringify({
       sessions,
       usage: this.usage,
@@ -1468,25 +1641,33 @@ ${tags}
     }
   }
 
-  /** A usage window crossing 80% or 90%; a reset (a new resetsAt) starts it over, silently. */
+  /**
+   * A usage window crossing 80% or 90%, per account; a reset (a new resetsAt) starts it over,
+   * silently. With two accounts on the board the toast says whose window it is.
+   */
   notifyUsage(isFirst) {
-    for (const window of this.usage.list) {
-      if (!WINDOW_ORDER.includes(window.key)) {
-        continue
-      }
-      const level = USAGE_THRESHOLDS.filter(threshold => window.percent >= threshold).pop() || 0
-      const previous = this.usageLevels.get(window.key)
-      // a reading without its reset time belongs to the window already known
-      const resetsAt = window.resetsAt || (previous && previous.resetsAt)
-      const isNewWindow = previous === undefined || !isSameReset(previous.resetsAt, resetsAt)
-      // the highest level the window reached: a figure swaying between two sources (79.6, then 80) toasts once
-      this.usageLevels.set(window.key, { level: isNewWindow ? level : Math.max(level, previous.level), resetsAt })
-      if (isFirst || isNewWindow || level <= previous.level) {
-        continue
-      }
-      if (vscode.workspace.getConfiguration('agentBoard').get('notify.usage', true)) {
-        const reset = window.resetsAt ? `，${resetText(window.resetsAt, Date.now())}` : ''
-        this.toast(level >= 90 ? 'error' : 'warning', `${window.label}已用 ${Math.round(window.percent)}%${reset}`)
+    const accounts = this.usage.accounts || []
+    for (const account of accounts) {
+      for (const window of account.list) {
+        if (!WINDOW_ORDER.includes(window.key)) {
+          continue
+        }
+        const key = `${account.id}:${window.key}`
+        const level = USAGE_THRESHOLDS.filter(threshold => window.percent >= threshold).pop() || 0
+        const previous = this.usageLevels.get(key)
+        // a reading without its reset time belongs to the window already known
+        const resetsAt = window.resetsAt || (previous && previous.resetsAt)
+        const isNewWindow = previous === undefined || !isSameReset(previous.resetsAt, resetsAt)
+        // the highest level the window reached: a figure swaying between two sources (79.6, then 80) toasts once
+        this.usageLevels.set(key, { level: isNewWindow ? level : Math.max(level, previous.level), resetsAt })
+        if (isFirst || isNewWindow || level <= previous.level) {
+          continue
+        }
+        if (vscode.workspace.getConfiguration('agentBoard').get('notify.usage', true)) {
+          const reset = window.resetsAt ? `，${resetText(window.resetsAt, Date.now())}` : ''
+          const whose = accounts.length > 1 ? `【${accountName(account)}】` : ''
+          this.toast(level >= 90 ? 'error' : 'warning', `${whose}${window.label}已用 ${Math.round(window.percent)}%${reset}`)
+        }
       }
     }
   }
@@ -1540,25 +1721,29 @@ ${tags}
       return
     }
 
-    const list = this.usage.list
-    const five = list.find(window => window.key === 'five_hour')
-    const week = list.find(window => window.key === 'seven_day')
-    if (five === undefined && week === undefined) {
+    // one group per account, in the board's order: "5h 62% · 週 18%", two accounts parted by a bar
+    const shown = (this.usage.accounts || [])
+      .map(account => ({
+        account,
+        five: account.list.find(window => window.key === 'five_hour'),
+        week: account.list.find(window => window.key === 'seven_day'),
+      }))
+      .filter(entry => entry.five !== undefined || entry.week !== undefined)
+    if (shown.length === 0) {
       this.usageItem.hide()
 
       return
     }
 
-    const parts = []
-    if (five !== undefined) {
-      parts.push(`5h ${Math.round(five.percent)}%`)
-    }
-    if (week !== undefined) {
-      parts.push(`週 ${Math.round(week.percent)}%`)
-    }
-    const peak = Math.max(...[five, week].filter(window => window !== undefined).map(window => window.percent))
+    const textOf = ({ five, week }) =>
+      [five === undefined ? undefined : `5h ${Math.round(five.percent)}%`, week === undefined ? undefined : `週 ${Math.round(week.percent)}%`]
+        .filter(Boolean)
+        .join(' · ')
+    const peak = Math.max(
+      ...shown.flatMap(({ five, week }) => [five, week].filter(window => window !== undefined).map(window => window.percent)),
+    )
 
-    this.usageItem.text = `$(pulse) ${parts.join(' · ')}`
+    this.usageItem.text = `$(pulse) ${shown.map(textOf).join(' ｜ ')}`
     this.usageItem.backgroundColor =
       peak >= 90
         ? new vscode.ThemeColor('statusBarItem.errorBackground')
@@ -1566,18 +1751,27 @@ ${tags}
           ? new vscode.ThemeColor('statusBarItem.warningBackground')
           : undefined
     const now = Date.now()
-    const lines = [
-      '訂閱用量',
-      ...list.map(
-        window =>
-          `${window.label}：${Math.round(window.percent)}%` +
-          `${window.resetsAt ? `，${resetText(window.resetsAt, now)}` : ''}` +
-          `（${SOURCE_LABEL[window.source] || window.source}・${agoText(now - window.at)}）`,
-      ),
-    ]
-    const problem = planProblem(this.usage, now)
-    if (problem !== undefined) {
-      lines.push('', `⚠ ${problem}`)
+    const isMany = shown.length > 1
+    const lines = [isMany ? `訂閱用量（${shown.length} 個帳號，狀態列由左到右）` : '訂閱用量']
+    for (const { account } of shown) {
+      if (isMany) {
+        lines.push('', `▸ ${accountName(account)}${account.isCurrent ? '（目前對話的帳號）' : ''}`)
+        if (account.sessions.length > 0) {
+          lines.push(`對話：${account.sessions.join('、')}`)
+        }
+      }
+      lines.push(
+        ...account.list.map(
+          window =>
+            `${window.label}：${Math.round(window.percent)}%` +
+            `${window.resetsAt ? `，${resetText(window.resetsAt, now)}` : ''}` +
+            `（${SOURCE_LABEL[window.source] || window.source}・${agoText(now - window.at)}）`,
+        ),
+      )
+      const problem = planProblem(account, now)
+      if (problem !== undefined) {
+        lines.push(`⚠ ${problem}`)
+      }
     }
     lines.push(
       '',
@@ -1609,6 +1803,11 @@ ${tags}
     const now = Date.now()
     const others = sessions
       .filter(candidate => candidate.sessionId !== session.sessionId && isLive(candidate, now))
+      // the desktop app's conversations are not this window's, as in `currentSessionId`
+      .filter(
+        candidate =>
+          candidate.entrypoint !== DESKTOP_ENTRYPOINT || vscode.workspace.getConfiguration('agentBoard').get('usageOfDesktopApp', false),
+      )
       .map(candidate => [candidate, contextOf(candidate)])
       .filter(([, measured]) => measured !== undefined)
 
