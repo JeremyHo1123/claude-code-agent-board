@@ -91,7 +91,8 @@ fails) joins the account whose weekly window resets at the same time; what is le
 unnamed account. An account with no session on the board is not shown beside one that has. An
 account whose every session runs in the desktop app is left out too, unless
 `agentBoard.usageOfDesktopApp` is on: the extension reads each session's `entrypoint` from its
-transcript (`claude-vscode`, `claude-desktop`, `cli`; every row carries it), in the same read that
+transcript (`claude-vscode`, `claude-desktop`, `cli`; every row carries it, and the last row read
+counts: a conversation begun in the desktop app and resumed in VS Code is VS Code's), in the same read that
 finds the title, so for the first seconds after a reload it is not known and such an account shows. The
 email is personal data: it lives in the board's files only, and `live-smoke.js` prints the id, not it.
 

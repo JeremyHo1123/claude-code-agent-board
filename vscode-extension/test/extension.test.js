@@ -44,6 +44,7 @@ const {
   promptsIn,
   promptHead,
   promptNeedle,
+  entrypointIn,
   titlesIn,
   tabLabelOf,
   parseAgentTranscript,
@@ -414,6 +415,16 @@ async function main() {
     assert.deepEqual(prompts.map(prompt => prompt.text), ['把週報腳本改寫成 TypeScript\n先不要動測試', '為什麼這裡會回傳 undefined', '長這樣'])
     assert.equal(prompts[0].at, Date.parse('2030-01-01T00:00:10.000Z'))
 
+    // a prompt typed in the desktop app is stamped the same way: a conversation begun there lists whole
+    assert.equal(promptsIn(row({ entrypoint: 'claude-desktop', origin: human, message: { content: '在桌面版問的' } })).length, 1)
+    // the program is the one that wrote last: begun in the desktop app, carried on in VS Code, it is VS Code's
+    const begun = row({ entrypoint: 'claude-desktop', origin: human, message: { content: '在桌面版問的' } })
+    const resumed = row({ entrypoint: 'claude-vscode', origin: human, message: { content: '在 VS Code 接著問' } })
+    assert.equal(entrypointIn(Buffer.from(`${begun}\n${resumed}\n`)), 'claude-vscode')
+    assert.equal(entrypointIn(Buffer.from(`${begun}\n`)), 'claude-desktop')
+    assert.equal(entrypointIn(Buffer.from(`${begun}\n{"type":"user","entrypoint":"claude-vs`)), undefined)
+    assert.equal(entrypointIn(Buffer.from('{"type":"user"}')), undefined)
+
     // listed by its first line, cut to fit; searched for by the start of that line
     assert.equal(promptHead('\n  把週報腳本改寫成 TypeScript\n先不要動測試', 80), '把週報腳本改寫成 TypeScript')
     assert.equal(promptHead('一二三四五六', 4), '一二三…')
@@ -548,6 +559,13 @@ async function main() {
     sessions = sessions.map(session => (session.sessionId === 'd' ? { ...session, isClosed: true } : session))
     assert.notEqual(board.currentSessionId([...sessions, desktop]).sessionId, 'e')
     assert.deepEqual(new AgentBoard({ subscriptions: [] }).currentSessionId([desktop]), { sessionId: undefined, isFocused: false })
+
+    // opened in a Claude tab here, it is the current one: the tab shows it, whatever its transcript says so far
+    const opened = new AgentBoard({ subscriptions: [] })
+    opened.titles.set('e', { path: 'x', size: 1, ai: '在桌面版開始的對話', checkedAt: now, entrypoint: 'claude-desktop' })
+    tabs.activeTabGroup = { activeTab: claudeTab('在桌面版開始的對話') }
+    assert.equal(opened.updateFocus([desktop]), true)
+    assert.deepEqual(opened.currentSessionId([desktop]), { sessionId: 'e', isFocused: true })
   }
 
   // ── the status bar's context item: the current conversation's, the others in its tooltip ──

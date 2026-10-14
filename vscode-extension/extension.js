@@ -384,11 +384,23 @@ function titlesIn(buffer) {
   return found
 }
 
-/** The program a stretch of transcript was written from: every row of a session carries the same `entrypoint`. */
+/**
+ * The program a stretch of transcript was last written from: every row carries its `entrypoint`,
+ * and the last one counts, as a conversation begun in one program can be carried on in another
+ * (begun in the desktop app, resumed in VS Code).
+ */
 function entrypointIn(buffer) {
-  const match = /"entrypoint":"([^"\\]+)"/.exec(buffer.toString('latin1'))
+  const marker = Buffer.from('"entrypoint":"')
+  const index = buffer.lastIndexOf(marker)
+  if (index < 0) {
+    return undefined
+  }
+  const start = index + marker.length
+  const end = buffer.indexOf(0x22, start)
+  const name = end < 0 ? '' : buffer.subarray(start, end).toString('latin1')
 
-  return match === null ? undefined : match[1]
+  // a row caught mid-write names none
+  return /^[\w-]+$/.test(name) ? name : undefined
 }
 
 /** A block the engine put beside what the person typed: `<system-reminder>…`, `<command-name>…`, a pasted instruction. */
@@ -1447,7 +1459,7 @@ ${tags}
           ? Math.max(0, entry.size - TITLE_OVERLAP_BYTES)
           : Math.max(0, stat.size - TITLE_TAIL_BYTES)
         const stretch = await readRange(entry.path, from, stat.size)
-        entry.entrypoint = entry.entrypoint || entrypointIn(stretch)
+        entry.entrypoint = entrypointIn(stretch) || entry.entrypoint
         let found = titlesIn(stretch)
         if (!isAppended && !hasTitle && found.custom === undefined && found.ai === undefined && from > 0 && !entry.isScanned) {
           entry.isScanned = true
@@ -1628,14 +1640,19 @@ ${tags}
    * The session the context meter shows: the focused Claude tab's while it is live; else, with no
    * tab matched, the one shown before, and only when that one is gone the live session that acted
    * last — so the meter never hops between sessions as they take turns working. A conversation in
-   * the desktop app is never the one, unless `agentBoard.usageOfDesktopApp` is on: it has no tab
-   * here, and its meter would stand in for a conversation that is not in this window.
+   * the desktop app is never picked that way, unless `agentBoard.usageOfDesktopApp` is on: its
+   * meter would stand in for a conversation that is not in this window. One a Claude tab here
+   * shows is the current one all the same.
    */
   currentSessionId(sessions) {
     const now = Date.now()
     const isDesktopShown = vscode.workspace.getConfiguration('agentBoard').get('usageOfDesktopApp', false)
+    // one the focused Claude tab shows is in this window, wherever it was begun: opened here from the
+    // desktop app, its transcript says "desktop" until the first prompt typed here
     const live = sessions.filter(
-      session => isLive(session, now) && (isDesktopShown || session.entrypoint !== DESKTOP_ENTRYPOINT),
+      session =>
+        isLive(session, now) &&
+        (isDesktopShown || session.entrypoint !== DESKTOP_ENTRYPOINT || session.sessionId === this.focusedSessionId),
     )
     const isLiveId = id => id !== undefined && live.some(session => session.sessionId === id)
     if (isLiveId(this.focusedSessionId)) {
@@ -2085,6 +2102,7 @@ module.exports = {
   promptsIn,
   promptHead,
   promptNeedle,
+  entrypointIn,
   titlesIn,
   tabLabelOf,
   parseAgentTranscript,

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本 0.7.0" src="https://img.shields.io/badge/version-0.7.0-2a78d6">
+  <img alt="版本 0.7.1" src="https://img.shields.io/badge/version-0.7.1-2a78d6">
   <img alt="MIT 授權" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 以上" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 以上" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -162,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | 最後一行是 `Validation passed` |
 | 在 Claude Code 對話裡輸入 `/agent-board` | 回覆子代理面板 |
 | 列出 `~/.claude/agent-board/sessions/` | 每個開著的對話各有一個 `<sessionId>.json`，修改時間在一分鐘內 |
-| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.7.0` |
+| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.7.1` |
 | 看 VS Code | 活動列有 **Agent Board** 圖示；對話回覆過一次後，狀態列出現 `5h …% · 週 …%` 和 `上下文 …%` |
 
 ### 更新

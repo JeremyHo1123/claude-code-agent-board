@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.7.0" src="https://img.shields.io/badge/version-0.7.0-2a78d6">
+  <img alt="version 0.7.1" src="https://img.shields.io/badge/version-0.7.1-2a78d6">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 or later" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -162,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | ends with `Validation passed` |
 | Type `/agent-board` in a Claude Code conversation | it answers with the subagent board |
 | List `~/.claude/agent-board/sessions/` | one `<sessionId>.json` per open conversation, modified within the last minute |
-| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.7.0` |
+| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.7.1` |
 | Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · 週 …%` and `上下文 …%` in the status bar once a conversation has had one reply |
 
 ### Update
