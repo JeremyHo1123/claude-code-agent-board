@@ -53,6 +53,8 @@ const TITLE_SEEK_MS = 20_000
 const TITLE_TAIL_BYTES = 1_048_576
 /** Later reads take only what was appended, from a little before, for a row the last read caught half-written. */
 const TITLE_OVERLAP_BYTES = 65_536
+/** An untitled transcript's first prompt is sought in this much of its head. */
+const FIRST_PROMPT_BYTES = 1_048_576
 
 function isoOf(value) {
   const at = Date.parse(value)
@@ -405,39 +407,83 @@ function entrypointIn(buffer) {
 
 /** A block the engine put beside what the person typed: `<system-reminder>…`, `<command-name>…`, a pasted instruction. */
 const WRAPPED = /^<[a-z][\w-]*>/
+/** The tags around text pasted into a prompt: `<pasted_content id="…">…</pasted_content id="…">`. The text is the person's. */
+const PASTED_TAG = /<\/?pasted_content(?:\s[^>]*)?>/g
+
+/** A transcript row the person typed (a user row stamped `origin.kind: "human"`), parsed; undefined for any other. */
+function humanRowOf(line) {
+  if (!line.includes('"type":"user"') || !line.includes('"kind":"human"')) {
+    return undefined
+  }
+  let row
+  try {
+    row = JSON.parse(line)
+  } catch {
+    return undefined
+  }
+
+  return row.type !== 'user' || row.isMeta || row.isSidechain || !row.origin || row.origin.kind !== 'human' || !row.message
+    ? undefined
+    : row
+}
+
+function textBlocksOf(row) {
+  const content = row.message.content
+
+  return (typeof content === 'string' ? [content] : Array.isArray(content) ? content.map(block => (block && block.type === 'text' ? block.text : '')) : []).map(
+    block => String(block || ''),
+  )
+}
+
+/** What the person typed in a row: the pasted text unwrapped, less the blocks the engine wrapped in a tag. */
+function typedIn(row) {
+  return textBlocksOf(row)
+    .map(block => block.replace(PASTED_TAG, '').trim())
+    .filter(block => block !== '' && !WRAPPED.test(block))
+    .join('\n')
+}
 
 /**
- * The prompts the person typed, out of whole transcript rows: `{ at, text }` each. A typed prompt is
- * a user row stamped `origin.kind: "human"`; its text is what is left without the blocks the engine
- * wrapped in a tag (so a slash command, all wrapped, is none).
+ * The prompts the person typed, out of whole transcript rows: `{ at, text }` each. Their text is what
+ * is left without the blocks the engine wrapped in a tag (so a slash command, all wrapped, is none).
  */
 function promptsIn(text) {
   const found = []
   for (const line of text.split('\n')) {
-    if (!line.includes('"type":"user"') || !line.includes('"kind":"human"')) {
-      continue
-    }
-    let row
-    try {
-      row = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (row.type !== 'user' || row.isMeta || row.isSidechain || !row.origin || row.origin.kind !== 'human' || !row.message) {
-      continue
-    }
-    const content = row.message.content
-    const blocks = typeof content === 'string' ? [content] : Array.isArray(content) ? content.map(block => (block && block.type === 'text' ? block.text : '')) : []
-    const typed = blocks
-      .map(block => String(block || '').trim())
-      .filter(block => block !== '' && !WRAPPED.test(block))
-      .join('\n')
+    const row = humanRowOf(line)
+    const typed = row === undefined ? '' : typedIn(row)
     if (typed !== '') {
       found.push({ at: Date.parse(row.timestamp) || 0, text: typed })
     }
   }
 
   return found
+}
+
+/**
+ * The first prompt of a conversation, as VS Code's Claude panel labels the tab of one Claude Code has
+ * not titled: what was typed, pasted text and all; a slash command as `/name args`.
+ */
+function firstPromptIn(text) {
+  for (const line of text.split('\n')) {
+    const row = humanRowOf(line)
+    if (row === undefined) {
+      continue
+    }
+    const typed = typedIn(row)
+    if (typed !== '') {
+      return typed
+    }
+    const blocks = textBlocksOf(row).join('\n')
+    const name = /<command-name>([^<]*)<\/command-name>/.exec(blocks)
+    if (name !== null && name[1].trim() !== '') {
+      const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(blocks)
+
+      return `${name[1].trim()} ${args === null ? '' : args[1].trim()}`.trim()
+    }
+  }
+
+  return undefined
 }
 
 /** A prompt's first line, to list it by. */
@@ -475,6 +521,20 @@ const DESKTOP_ENTRYPOINT = 'claude-desktop'
  */
 function tabLabelOf(title) {
   return title.length > 25 ? `${title.substring(0, 24)}…` : title
+}
+
+/**
+ * Whether a tab label is the one the Claude panel makes of a first prompt, whitespace aside: it labels
+ * with the prompt as typed, line breaks and all, and after a reload with the prompt as Claude Code
+ * lists it, so only the words are compared.
+ */
+function isPromptLabel(label, prompt) {
+  const squeeze = text => text.replace(/\s+/g, ' ').trim()
+  const isCut = label.endsWith('…')
+  const stem = squeeze(isCut ? label.slice(0, -1) : label)
+  const whole = squeeze(prompt)
+
+  return stem !== '' && (isCut ? whole.startsWith(stem) : whole === stem)
 }
 
 /** A Claude conversation tab, as VS Code's tab API sees the extension's webview panel. */
@@ -1284,7 +1344,7 @@ class AgentBoard {
       // its last words, once it has ended, are its answer: shown as the report, not again among the steps
       transcript = { ...transcript, output: { via: 'text', ...transcript.finalText }, events: transcript.events.slice(0, -1) }
     }
-    const title = this.titleOf(watch.sessionId)
+    const title = this.displayNameOf(watch.sessionId)
 
     return {
       key: `${watch.sessionId}:${watch.agentId}`,
@@ -1419,7 +1479,7 @@ ${tags}
   /**
    * Each live session's title, as Claude Code wrote it into the transcript: a first read takes the
    * tail (the whole file once, should the tail hold none), later ones only what was appended.
-   * At most two reads a poll.
+   * At most two reads a poll. A session with no title has its first prompt read from the head instead.
    */
   async refreshTitles(sessions) {
     const now = Date.now()
@@ -1430,7 +1490,7 @@ ${tags}
       }
       let entry = this.titles.get(session.sessionId)
       if (entry === undefined) {
-        entry = { path: undefined, size: 0, custom: undefined, ai: undefined, isScanned: false, checkedAt: 0, soughtAt: 0 }
+        entry = { path: undefined, size: 0, custom: undefined, ai: undefined, first: undefined, isScanned: false, checkedAt: 0, soughtAt: 0 }
         this.titles.set(session.sessionId, entry)
       }
       if (entry.path === undefined) {
@@ -1468,6 +1528,11 @@ ${tags}
         entry.size = stat.size
         entry.custom = found.custom || entry.custom
         entry.ai = found.ai || entry.ai
+        if (entry.custom === undefined && entry.ai === undefined && entry.first === undefined) {
+          // what its tab is labelled with until Claude Code titles it, which for some conversations it never does
+          const head = from === 0 ? stretch : await readRange(entry.path, 0, Math.min(stat.size, FIRST_PROMPT_BYTES))
+          entry.first = firstPromptIn(head.subarray(0, head.lastIndexOf(0x0a) + 1).toString('utf8'))
+        }
       } catch {
         entry.path = undefined
       }
@@ -1478,6 +1543,21 @@ ${tags}
     const entry = this.titles.get(sessionId)
 
     return entry === undefined ? undefined : entry.custom || entry.ai
+  }
+
+  /** An untitled session's first prompt (`firstPromptIn`); undefined once it has a title, or before it is read. */
+  firstPromptOf(sessionId) {
+    const entry = this.titles.get(sessionId)
+
+    return entry === undefined || entry.custom !== undefined || entry.ai !== undefined ? undefined : entry.first
+  }
+
+  /** What the board calls a session: its title, else the first line of its first prompt, as its tab does. */
+  displayNameOf(sessionId) {
+    const title = this.titleOf(sessionId)
+    const first = this.firstPromptOf(sessionId)
+
+    return title !== undefined ? title : first !== undefined ? promptHead(first, 80) : undefined
   }
 
   /** The program a session runs in, as its transcript says ("claude-vscode", "claude-desktop", "cli"); undefined until read. */
@@ -1546,11 +1626,13 @@ ${tags}
   /** The Claude tab of a session, matched by its label as `updateFocus` matches the focused one. */
   claudeTabOf(sessionId) {
     const title = this.titleOf(sessionId)
+    const first = this.firstPromptOf(sessionId)
     const groups = (vscode.window.tabGroups && vscode.window.tabGroups.all) || []
     const tabs = groups.flatMap(group => group.tabs.map((tab, index) => ({ tab, group, index }))).filter(found => isClaudeTab(found.tab))
-    const label = title === undefined ? 'Claude Code' : tabLabelOf(title)
+    const isLabel = label =>
+      title !== undefined ? label === tabLabelOf(title) : first !== undefined ? isPromptLabel(label, first) : label === 'Claude Code'
 
-    return tabs.find(found => found.tab.label === label) || (tabs.length === 1 ? tabs[0] : undefined)
+    return tabs.find(found => isLabel(found.tab.label)) || (tabs.length === 1 ? tabs[0] : undefined)
   }
 
   /**
@@ -1593,8 +1675,10 @@ ${tags}
   }
 
   /**
-   * The focused Claude tab, matched to a session by its label: the context meter follows it. A new
-   * conversation's tab has no title to match yet; it is taken for the one live session without one.
+   * The focused Claude tab, matched to a session by its label: the context meter follows it. The
+   * label is the title Claude Code wrote; until there is one, and for the conversations Claude Code
+   * never titles, it is the first prompt. Two untitled sessions begun alike cannot be told apart, so
+   * the focus stays. A tab that matches nothing is taken for the one live session without a title.
    */
   updateFocus(sessions) {
     const group = vscode.window.tabGroups && vscode.window.tabGroups.activeTabGroup
@@ -1610,10 +1694,18 @@ ${tags}
       return title !== undefined && tabLabelOf(title) === tab.label
     })
     const untitled = live.filter(session => this.titleOf(session.sessionId) === undefined)
+    const prompted = untitled.filter(session => {
+      const first = this.firstPromptOf(session.sessionId)
+
+      return first !== undefined && isPromptLabel(tab.label, first)
+    })
+    const isFocused = session => session.sessionId === this.focusedSessionId
     const match =
-      named.find(session => session.sessionId === this.focusedSessionId) ||
+      named.find(isFocused) ||
       named[0] ||
-      (named.length === 0 && untitled.length === 1 ? untitled[0] : undefined)
+      prompted.find(isFocused) ||
+      (prompted.length === 1 ? prompted[0] : undefined) ||
+      (named.length === 0 && prompted.length === 0 && untitled.length === 1 ? untitled[0] : undefined)
     if (match === undefined || match.sessionId === this.focusedSessionId) {
       return false
     }
@@ -1681,9 +1773,9 @@ ${tags}
   }
 
   publish() {
-    // each snapshot with its title, when the transcript has one, and its workflow agents named
+    // each snapshot with its title (the first prompt's line while it has none), and its workflow agents named
     const sessions = this.sessions().map(session => {
-      const title = this.titleOf(session.sessionId)
+      const title = this.displayNameOf(session.sessionId)
       const entrypoint = this.entrypointOf(session.sessionId)
       const agents = session.agents.map(agent => this.withWorkflow(session.sessionId, agent))
 
@@ -2100,11 +2192,13 @@ module.exports = {
   AgentBoard,
   mergeUsage,
   promptsIn,
+  firstPromptIn,
   promptHead,
   promptNeedle,
   entrypointIn,
   titlesIn,
   tabLabelOf,
+  isPromptLabel,
   parseAgentTranscript,
   parseWorkflowRun,
   findAgentTranscript,

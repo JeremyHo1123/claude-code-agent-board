@@ -121,6 +121,17 @@ not found. The prompts come from the transcript (`promptsIn`): user rows stamped
 If the rule changes upstream, focus-following silently stops working: look for `rename_tab` in the
 Claude extension's webview code.
 
+**Many conversations never get a title.** Until Claude Code writes an `ai-title` row, the tab is
+labelled with the first prompt as typed; for many conversations (two in five on the machine this was
+found on: most begun with a slash command or a pasted prompt) that row never comes, and the tab keeps
+the prompt. Matching titles alone, such a tab only matched while it was the one untitled live
+session. So `refreshTitles` reads an untitled transcript's first prompt from its head
+(`firstPromptIn`: pasted text unwrapped, a slash command as `/name args`), and `isPromptLabel`
+compares it with the label on its words only: the panel labels with the prompt as typed, line breaks
+and all, and after a reload with the prompt as Claude Code lists it. Two conversations begun with the
+same 24 characters carry the same label; the focus then stays where it was. The board names an
+untitled conversation by that prompt's first line, as its tab does, not by its folder.
+
 **Transcript rows.** What `parseAgentTranscript` relies on:
 
 - The first user row that is not `isMeta` is the task.

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本 0.7.1" src="https://img.shields.io/badge/version-0.7.1-2a78d6">
+  <img alt="版本 0.7.2" src="https://img.shields.io/badge/version-0.7.2-2a78d6">
   <img alt="MIT 授權" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 以上" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 以上" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -92,7 +92,7 @@ flowchart LR
 - **快照。** mod 掛在對話、回合、工具呼叫、子代理這些事件上。有變化就寫 `sessions/<sessionId>.json`，最多每秒一次，另外每分鐘寫一次當作心跳。檔案裡有子代理清單、對話狀態（工作中、等待、閒置）、上下文用量、額度讀數。
 - **用量有兩個來源。** 每次 API 回覆都會附帶額度讀數，很即時，但會稍微落後。`/usage` 讀的那個端點最準，所以由**一個**對話每 30 秒替同帳號的所有對話讀一次，結果放在 `plan-<帳號>.json`。同一段期間內用量只會增加，所以面板顯示目前這段期間裡**最高**的讀數。期間重置或換帳號後，舊期間的讀數立刻作廢。每份對話快照和每份共用讀數都記著自己的帳號，兩個帳號的讀數不會放在一起算。
 - **任務細節。** Claude Code 本來就會把每個子代理的對話紀錄，寫在它所屬對話的紀錄旁邊。細節頁開著時，擴充套件讀那個檔案，檔案變長就再讀一次。它也會讀 workflow 的執行檔，取得代理的名稱和階段。
-- **哪個對話算「目前」。** VS Code 不會告訴一個擴充套件，另一個擴充套件的分頁顯示的是哪個對話。所以面板拿分頁上的標題，去比對 Claude Code 寫進每份紀錄裡的標題。
+- **哪個對話算「目前」。** VS Code 不會告訴一個擴充套件，另一個擴充套件的分頁顯示的是哪個對話。所以面板拿分頁上的標題，去比對 Claude Code 寫進每份紀錄裡的標題。Claude Code 沒幫它取標題的對話，分頁上顯示的是第一句提問，面板就改拿第一句比對。兩個沒有標題的對話，如果第一句的前 24 個字一樣，分頁標題也會一樣，面板分不出來。
 
 ## 需求
 
@@ -162,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | 最後一行是 `Validation passed` |
 | 在 Claude Code 對話裡輸入 `/agent-board` | 回覆子代理面板 |
 | 列出 `~/.claude/agent-board/sessions/` | 每個開著的對話各有一個 `<sessionId>.json`，修改時間在一分鐘內 |
-| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.7.1` |
+| `code --list-extensions --show-versions` | 列出 `jeremy-local.agent-board@0.7.2` |
 | 看 VS Code | 活動列有 **Agent Board** 圖示；對話回覆過一次後，狀態列出現 `5h …% · 週 …%` 和 `上下文 …%` |
 
 ### 更新

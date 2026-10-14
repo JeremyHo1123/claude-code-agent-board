@@ -42,11 +42,13 @@ const {
   AgentBoard,
   mergeUsage,
   promptsIn,
+  firstPromptIn,
   promptHead,
   promptNeedle,
   entrypointIn,
   titlesIn,
   tabLabelOf,
+  isPromptLabel,
   parseAgentTranscript,
   parseWorkflowRun,
   findAgentTranscript,
@@ -415,6 +417,26 @@ async function main() {
     assert.deepEqual(prompts.map(prompt => prompt.text), ['把週報腳本改寫成 TypeScript\n先不要動測試', '為什麼這裡會回傳 undefined', '長這樣'])
     assert.equal(prompts[0].at, Date.parse('2030-01-01T00:00:10.000Z'))
 
+    // pasted text is the person's: its tags go, the text stays
+    const pasted = row({
+      origin: human,
+      message: {
+        content: [
+          { type: 'text', text: '<browser_instruction>…</browser_instruction>' },
+          { type: 'text', text: '\n\n<pasted_content id="1234">\n接著寫第 3 到 5 章\n\n先讀這幾個檔案\n</pasted_content id="1234">\n' },
+        ],
+      },
+    })
+    assert.deepEqual(promptsIn(pasted).map(prompt => prompt.text), ['接著寫第 3 到 5 章\n\n先讀這幾個檔案'])
+
+    // the first prompt, which labels the tab of a conversation Claude Code has not titled: typed, else a slash command
+    assert.equal(firstPromptIn(rows.join('\n')), '把週報腳本改寫成 TypeScript\n先不要動測試')
+    assert.equal(firstPromptIn([rows[4], rows[3], rows[0]].join('\n')), '/jump')
+    assert.equal(firstPromptIn(pasted), '接著寫第 3 到 5 章\n\n先讀這幾個檔案')
+    const command = '<command-message>summarize</command-message>\n<command-name>/summarize</command-name>\n<command-args>整理讀書筆記</command-args>'
+    assert.equal(firstPromptIn(row({ origin: human, message: { content: command } })), '/summarize 整理讀書筆記')
+    assert.equal(firstPromptIn(rows.slice(4).join('\n')), undefined, 'nothing typed yet')
+
     // a prompt typed in the desktop app is stamped the same way: a conversation begun there lists whole
     assert.equal(promptsIn(row({ entrypoint: 'claude-desktop', origin: human, message: { content: '在桌面版問的' } })).length, 1)
     // the program is the one that wrote last: begun in the desktop app, carried on in VS Code, it is VS Code's
@@ -460,6 +482,17 @@ async function main() {
     assert.equal(tabLabelOf(exactly25), exactly25)
     assert.equal(tabLabelOf('Compare add and concat for skip connections in PyTorch'), 'Compare add and concat f…')
 
+    // an untitled conversation's tab carries its first prompt, cut the same way: as typed, or as listed after a reload
+    const typed = '/summarize 整理 2030-01-01 的讀書筆記\n\n要改的地方'
+    assert.equal(isPromptLabel(tabLabelOf(typed), typed), true)
+    assert.equal(isPromptLabel(tabLabelOf(typed.replace(/\s+/g, ' ')), typed), true)
+    assert.equal(isPromptLabel(tabLabelOf('第 6 段\n\n先讀這幾個檔案，讀完再動手做下一步'), '第 6 段 先讀這幾個檔案，讀完再動手做下一步'), true)
+    assert.equal(isPromptLabel('/jump', '/jump'), true)
+    assert.equal(isPromptLabel('/jump', '/jump 到第二段'), false, 'a label not cut is the whole prompt')
+    assert.equal(isPromptLabel(tabLabelOf(typed), '/summarize 整理 2030-02-01 的讀書筆記'), false)
+    assert.equal(isPromptLabel('Claude Code', '整理讀書筆記'), false)
+    assert.equal(isPromptLabel('…', '整理讀書筆記'), false)
+
     const rows = [
       '{"type":"user","message":"hi"}',
       '{"type":"ai-title","sessionId":"x","aiTitle":"舊標題"}',
@@ -498,6 +531,21 @@ async function main() {
     now += 31_000
     await board.refreshTitles(live)
     assert.equal(board.titleOf('x'), '改名後', 'the appended custom title wins')
+
+    // no title: the first prompt is read from the head, past more than the tail's megabyte; a title, once written, wins
+    const untitled = path.join(dir, 'u.jsonl')
+    const typed = '{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":"接著寫第 3 到 5 章\\n先讀這幾個檔案"}}\n'
+    fs.writeFileSync(untitled, `{"type":"queue-operation"}\n${typed}${filler}`)
+    board.titles.set('u', { path: untitled, size: 0, custom: undefined, ai: undefined, first: undefined, isScanned: false, checkedAt: 0, soughtAt: 0 })
+    await board.refreshTitles([{ sessionId: 'u', isClosed: false }])
+    assert.equal(board.titleOf('u'), undefined)
+    assert.equal(board.firstPromptOf('u'), '接著寫第 3 到 5 章\n先讀這幾個檔案')
+    assert.equal(board.displayNameOf('u'), '接著寫第 3 到 5 章')
+    fs.appendFileSync(untitled, '{"type":"ai-title","aiTitle":"讀書筆記第 3 到 5 章","sessionId":"u"}\n')
+    now += 21_000
+    await board.refreshTitles([{ sessionId: 'u', isClosed: false }])
+    assert.equal(board.firstPromptOf('u'), undefined)
+    assert.equal(board.displayNameOf('u'), '讀書筆記第 3 到 5 章')
 
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -566,6 +614,41 @@ async function main() {
     tabs.activeTabGroup = { activeTab: claudeTab('在桌面版開始的對話') }
     assert.equal(opened.updateFocus([desktop]), true)
     assert.deepEqual(opened.currentSessionId([desktop]), { sessionId: 'e', isFocused: true })
+  }
+
+  // ── focus on conversations Claude Code has not titled: their tabs carry the first prompt ──
+  {
+    const board = new AgentBoard({ subscriptions: [] })
+    const claudeTab = label => ({ label, input: { viewType: 'mainThreadWebview-claudeVSCodePanel' } })
+    const make = sessionId => ({ sessionId, cwd: 'C:/v', updatedAt: now, isClosed: false, activity: { state: 'working', since: now }, agents: [] })
+    const read = (sessionId, fields) =>
+      board.titles.set(sessionId, { path: 'p', size: 1, custom: undefined, ai: undefined, first: undefined, isScanned: true, checkedAt: now, soughtAt: now, ...fields })
+    const summarize = '/summarize 整理 2030-01-01 的讀書筆記\n\n要改的地方'
+    const next = '接著寫第 3 到 5 章（筆記在 notes/book/）。\n先讀這幾個檔案'
+    const sessions = [make('p'), make('q'), make('r')]
+    read('p', { first: summarize })
+    read('q', { first: next })
+    read('r', { first: next })
+
+    // three untitled sessions: the prompt on the tab tells which
+    tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(summarize)) }
+    assert.equal(board.updateFocus(sessions), true)
+    assert.deepEqual(board.currentSessionId(sessions), { sessionId: 'p', isFocused: true })
+    assert.equal(board.displayNameOf('p'), '/summarize 整理 2030-01-01 的讀書筆記')
+
+    // two begun alike cannot be told apart: the focus stays
+    tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(next)) }
+    assert.equal(board.updateFocus(sessions), false)
+    assert.equal(board.currentSessionId(sessions).sessionId, 'p')
+
+    // titled, one's tab carries the title, and the prompt's label names only the other
+    read('q', { ai: '讀書筆記第 3 到 5 章', first: next })
+    tabs.activeTabGroup = { activeTab: claudeTab('讀書筆記第 3 到 5 章') }
+    assert.equal(board.updateFocus(sessions), true)
+    assert.equal(board.currentSessionId(sessions).sessionId, 'q')
+    tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(next)) }
+    assert.equal(board.updateFocus(sessions), true)
+    assert.equal(board.currentSessionId(sessions).sessionId, 'r')
   }
 
   // ── the status bar's context item: the current conversation's, the others in its tooltip ──
