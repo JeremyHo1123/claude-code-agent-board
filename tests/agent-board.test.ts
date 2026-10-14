@@ -1,14 +1,17 @@
 import type { AgentInfo } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 import {
   boardRootOf,
   describeCall,
   formatElapsed,
   formatTokens,
+  isAnotherAccountsWeek,
   parseAccount,
   parsePlanUsage,
   planFileOf,
+  weekEndOf,
 } from '../hooks/format'
 
 /** The home folder every test's session reports: the board's files land under its .claude/agent-board. */
@@ -61,6 +64,22 @@ test('the profile body reads into an account, which names the shared file', asyn
   expect(parseAccount('not json')).toBeUndefined()
   expect(planFileOf({ id: '0a1b2c3d4e5f' })).toBe('plan-0a1b2c3d4e5f.json')
   expect(planFileOf(undefined)).toBe('plan.json')
+})
+
+test("another account's week: one that ends elsewhere while the earlier week still runs", async () => {
+  expect(weekEndOf(parsePlanUsage(PLAN_BODY, 0))).toBe('2026-10-09T03:00:00Z')
+  expect(weekEndOf(undefined)).toBeUndefined()
+  const week = '2026-10-09T03:00:00Z'
+  const before = Date.parse(week) - 86_400_000
+  expect(isAnotherAccountsWeek(week, '2026-10-08T12:00:00Z', before)).toBe(true)
+  // the same week read again: its end wanders by a second
+  expect(isAnotherAccountsWeek(week, '2026-10-09T02:59:59.596Z', before)).toBe(false)
+  // the week ended: the next one ends a week later, the same account
+  expect(isAnotherAccountsWeek(week, '2026-10-16T03:00:00Z', Date.parse(week) + 1_000)).toBe(false)
+  expect(isAnotherAccountsWeek(week, '2026-10-16T03:00:00Z', Date.parse(week) - 60_000)).toBe(false)
+  // nothing known on either side says nothing
+  expect(isAnotherAccountsWeek(undefined, week, before)).toBe(false)
+  expect(isAnotherAccountsWeek(week, undefined, before)).toBe(false)
 })
 
 test('one read of the plan usage serves every session of the account through its shared file, and a refusal backs off', async ($, on) => {
@@ -166,6 +185,101 @@ test('one read of the plan usage serves every session of the account through its
   expect(shared().failures).toBeUndefined()
   expect(shared().lastError).toBeUndefined()
   expect(shared().nextAttemptAt - shared().lastAttemptAt).toBe(30_000)
+})
+
+/** A second sign-in, whose week ends at another time than the first one's. */
+const OTHER_PROFILE = {
+  account: { uuid: '66666666-7777-8888-9999-000000000000', email: 'other@example.com' },
+  organization: { uuid: 'FEDCBA98-7654-3210-FEDC-BA9876543210' },
+}
+const OTHER_PLAN_BODY = {
+  five_hour: { utilization: 7, resets_at: '2026-10-05T12:00:00Z' },
+  seven_day: { utilization: 73, resets_at: '2026-10-08T12:00:00Z' },
+}
+
+/** A session whose credential can be moved to the other account mid-session, as /login does. */
+function loginSetup(on: Parameters<TestBody>[1], refuseReads = false) {
+  const files = new Map<string, string>()
+  const state = {
+    signedIn: 'tester' as 'tester' | 'other',
+    rateLimits: [] as { kind: string; percentUsed: number; resetsAt?: string }[],
+  }
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.authorize', () => ({ value: { handle: 'handle-1', kind: 'bearer' } as const }))
+  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? HOME : undefined }))
+  on('http.fetch', ($, e) => {
+    const isOther = state.signedIn === 'other'
+    const isProfile = e.url.endsWith('/api/oauth/profile')
+    const isRefused = refuseReads && !isProfile
+    const headers: Record<string, string> = isRefused ? { 'retry-after': '3600' } : {}
+    const body = isProfile ? (isOther ? OTHER_PROFILE : PROFILE_BODY) : isOther ? OTHER_PLAN_BODY : PLAN_BODY
+
+    return { value: { status: isRefused ? 429 : 200, ok: !isRefused, headers, text: isRefused ? '' : JSON.stringify(body) } }
+  })
+  on('fs.read', ($, e) => {
+    const text = files.get(pathKey(e.path))
+
+    return text === undefined ? { deny: 'no such file' } : { value: text }
+  })
+  on('fs.write', ($, e) => {
+    files.set(pathKey(e.path), e.text)
+
+    return { value: undefined }
+  })
+  on('session.id', () => ({ value: 'session-9' }))
+  on('session.cwd', () => ({ value: '/work/project' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 1_000, window: 1_000_000, percent: 0 }, rateLimits: state.rateLimits },
+  }))
+  on('agent.list', () => ({ value: [] }))
+  on('ui.status', () => ({ value: undefined }))
+
+  const BOARD = '/home/tester/.claude/agent-board'
+
+  return {
+    state,
+    plan: (id: string) => JSON.parse(files.get(`${BOARD}/plan-${id}.json`) ?? '{}'),
+    snapshot: () => JSON.parse(files.get(`${BOARD}/sessions/session-9.json`) ?? '{}'),
+  }
+}
+
+test('a /login to another account moves the shared read to that account long before the recheck', async ($, on) => {
+  const clock = mock.clock(on, { now: 100_000 })
+  const { state, plan, snapshot } = loginSetup(on)
+  await $.session.start({ cwd: '/work/project', surface: 'vscode', isInteractive: true })
+  await clock.advance(1_000)
+  expect(plan('0a1b2c3d4e5f').plan.windows[1]).toMatchObject({ key: 'seven_day', percent: 18.5 })
+  expect(snapshot().account.id).toBe('0a1b2c3d4e5f')
+
+  // the next read, through the other account's credential, answers with another week
+  state.signedIn = 'other'
+  await clock.advance(31_000)
+  // it stays out of the first account's file, and the session asked at once whose it is now
+  expect(plan('0a1b2c3d4e5f').plan.windows[1]).toMatchObject({ percent: 18.5 })
+  expect(snapshot().account).toEqual({ id: 'fedcba987654', label: 'other@example.com' })
+  // the next check reads into that account's own file
+  await clock.advance(5_000)
+  expect(plan('fedcba987654').plan.windows[1]).toMatchObject({ key: 'seven_day', percent: 73 })
+  expect(plan('0a1b2c3d4e5f').plan.windows[1]).toMatchObject({ percent: 18.5 })
+})
+
+test("a /login shows in the session's own reply readings too: the snapshot names the new account", async ($, on) => {
+  const clock = mock.clock(on, { now: 100_000 })
+  // the shared read is held off for an hour: only the replies can tell
+  const { state, snapshot } = loginSetup(on, true)
+  state.rateLimits = [{ kind: 'seven_day', percentUsed: 18.5, resetsAt: '2026-10-09T03:00:00Z' }]
+  await $.session.start({ cwd: '/work/project', surface: 'vscode', isInteractive: true })
+  await clock.advance(1_000)
+  expect(snapshot().account.id).toBe('0a1b2c3d4e5f')
+
+  state.signedIn = 'other'
+  state.rateLimits = [{ kind: 'seven_day', percentUsed: 73, resetsAt: '2026-10-08T12:00:00Z' }]
+  // the heartbeat's snapshot carries the new reading: the account is asked before it is named
+  await clock.advance(61_000)
+  expect(snapshot().account).toEqual({ id: 'fedcba987654', label: 'other@example.com' })
+  expect(snapshot().usage.rateLimits).toEqual([{ kind: 'seven_day', percentUsed: 73, resetsAt: '2026-10-08T12:00:00Z' }])
 })
 
 const PANE = {

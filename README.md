@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.7.2" src="https://img.shields.io/badge/version-0.7.2-2a78d6">
+  <img alt="version 0.7.3" src="https://img.shields.io/badge/version-0.7.3-2a78d6">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 or later" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
@@ -90,7 +90,7 @@ flowchart LR
 ```
 
 - **Snapshots.** The mod hooks session, turn, tool-call and agent events. It writes `sessions/<sessionId>.json` whenever something changed, at most once a second, and once a minute as a heartbeat. The file holds the subagent rows, the session's activity (working, waiting, idle), its context fill and its rate-limit readings.
-- **Usage, from two sources.** Every API reply carries rate-limit readings, which are fresh but run slightly behind. The usage endpoint that `/usage` reads is exact, so **one** session reads it for all of its account's every 30 seconds, through `plan-<account>.json`. Use within a window only grows, so the board shows the **highest** reading of the window in force. After a reset or a change of account, the earlier window's readings fall away at once. Each snapshot and each shared read names its account, and two accounts' readings are never settled together.
+- **Usage, from two sources.** Every API reply carries rate-limit readings, which are fresh but run slightly behind. The usage endpoint that `/usage` reads is exact, so **one** session reads it for all of its account's every 30 seconds, through `plan-<account>.json`. Use within a window only grows, so the board shows the **highest** reading of the window in force. After a reset or a change of account, the earlier window's readings fall away at once. Each snapshot and each shared read names its account, and two accounts' readings are never settled together. After `/login` to another account, a reading whose weekly window ends at another time tells each session to ask whose credential it holds at once.
 - **Task details.** Claude Code already writes each subagent's transcript next to its session's. The extension reads that file while a detail is open, and again whenever it grows. It also reads workflow run files for agent labels and phases.
 - **Which conversation is "current".** VS Code does not tell one extension which Claude conversation another extension's tab shows. The board matches the focused tab's title against the title Claude Code writes into each transcript, or, for a conversation Claude Code has not titled, against its first prompt, which is what such a tab shows. Two untitled conversations whose first prompts begin with the same 24 characters show the same tab title, and the board cannot tell them apart.
 
@@ -162,7 +162,7 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | ends with `Validation passed` |
 | Type `/agent-board` in a Claude Code conversation | it answers with the subagent board |
 | List `~/.claude/agent-board/sessions/` | one `<sessionId>.json` per open conversation, modified within the last minute |
-| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.7.2` |
+| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.7.3` |
 | Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · 週 …%` and `上下文 …%` in the status bar once a conversation has had one reply |
 
 ### Update

@@ -204,7 +204,7 @@ function weekOf(source) {
 const UNNAMED_READ_MS = 30 * 60_000
 
 /**
- * The subscription usage of every account with a session on the board. `shared` is the shared
+ * The subscription usage of every account with a live session on the board. `shared` is the shared
  * claude.ai reads (one file per account; one object or a list), each session carries its replies'
  * readings, and both name their account once the mod has learnt it. Two accounts' figures are never
  * settled together: VS Code signed in to one and the desktop app to another once showed whichever
@@ -264,8 +264,10 @@ function mergeUsage(sessions, shared, currentSessionId, isDesktopShown = false) 
   let groups = [...named.values(), rest]
     .filter(group => group.sources.length > 0)
     .map(group => ({ ...group, settled: settleSources(group.sources) }))
-  // an account whose sessions are all gone leaves its shared read behind: not shown beside one in use
-  const hasSession = group => group.sources.some(source => source.session)
+  // an account whose sessions are all gone leaves its shared read behind: not shown beside one in use.
+  // Gone includes a session that stopped without closing (a window reload ends its process): it lingers
+  // on the board for hours, still naming the account it was signed in to before a /login
+  const hasSession = group => group.sources.some(source => source.session && isLive(source.session, now))
   if (groups.some(hasSession)) {
     groups = groups.filter(hasSession)
   }

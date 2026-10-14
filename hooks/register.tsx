@@ -9,6 +9,7 @@ import {
   countRows,
   describeCall,
   formatElapsed,
+  isAnotherAccountsWeek,
   orderRows,
   parseAccount,
   parsePlanUsage,
@@ -16,6 +17,7 @@ import {
   renderMarkdown,
   rowDetail,
   statusIcon,
+  weekEndOf,
 } from './format'
 import type { PlanAccount, PlanUsage, SessionActivity } from './format'
 
@@ -61,7 +63,10 @@ const PLAN_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
  * usage must not be merged: each account has its own shared read, and each snapshot names its account.
  */
 const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
-/** Asked again this often, for a sign-in changed mid-session; sooner while it has not answered yet. */
+/**
+ * Asked again this often, for a sign-in changed mid-session; sooner while it has not answered yet.
+ * A /login is mostly caught long before: a reading whose weekly window is another account's asks at once.
+ */
 const ACCOUNT_RECHECK_MS = 600_000
 const ACCOUNT_RETRY_MS = 60_000
 /**
@@ -101,6 +106,8 @@ let planCheckedAt = 0
 /** The account this session is signed in to, once the profile endpoint has said; and when to ask next. */
 let account: PlanAccount | undefined
 let accountNextAt = 0
+/** When the weekly window of this session's last reply reading ends: a jump says the account changed. */
+let replyWeekEnd: string | undefined
 /** When this session last saw an API response arrive (a tool call follows one): how fresh its rate-limit readings are. */
 let lastResponseAt = 0
 /** Module state, as the board reads it: a reload starts it over as idle, the next turn corrects it. */
@@ -192,18 +199,15 @@ async function readSharedPlan($: EngineInterface, name: string): Promise<SharedP
 }
 
 /**
- * The account behind this session's credential, asked when due. A failed read keeps what was known:
- * the usage then goes on under that account, or under none until the first answer.
+ * Asks now whose this session's credential is, and keeps the answer: the account, or undefined when
+ * the profile did not answer (what was known stands, and it is asked again after the retry interval).
  */
-async function readAccount($: EngineInterface, at: number): Promise<PlanAccount | undefined> {
-  if (at < accountNextAt) {
-    return account
-  }
+async function askAccount($: EngineInterface, at: number): Promise<PlanAccount | undefined> {
   accountNextAt = at + ACCOUNT_RETRY_MS
   try {
     const auth = await $.session.authorize()
     if (auth === null || auth.kind !== 'bearer') {
-      return account
+      return undefined
     }
     const response = await $.http.fetch(PROFILE_URL, {
       auth: auth.handle,
@@ -216,8 +220,20 @@ async function readAccount($: EngineInterface, at: number): Promise<PlanAccount 
       account = parsed
       accountNextAt = at + ACCOUNT_RECHECK_MS
     }
+
+    return parsed
   } catch {
-    // asked again after the retry interval
+    return undefined
+  }
+}
+
+/**
+ * The account behind this session's credential, asked when due. A failed read keeps what was known:
+ * the usage then goes on under that account, or under none until the first answer.
+ */
+async function readAccount($: EngineInterface, at: number): Promise<PlanAccount | undefined> {
+  if (at >= accountNextAt) {
+    await askAccount($, at)
   }
 
   return account
@@ -280,6 +296,16 @@ async function maybeReadPlan($: EngineInterface): Promise<void> {
   const claimed: SharedPlan = { ...shared, account: who, nextAttemptAt: at + PLAN_INTERVAL_MS, lastAttemptAt: at }
   await $.fs.write(file, JSON.stringify(claimed))
   const outcome = await fetchPlan($, at, shared?.failures ?? 0)
+  if (who !== undefined && isAnotherAccountsWeek(weekEndOf(shared?.plan), weekEndOf(outcome.plan), at)) {
+    // Another account's week: after a /login the credential is someone else's before this session
+    // asks again, and its read must not land in this account's file. Asked now; only the same
+    // account confirmed (the file's figures were the odd ones) lets the read in. The claim stands,
+    // so a profile that does not answer costs one read a round, not one every check.
+    const asked = await askAccount($, at)
+    if (asked === undefined || asked.id !== who.id) {
+      return
+    }
+  }
   await $.fs.write(file, JSON.stringify({ ...claimed, ...outcome }))
 }
 
@@ -317,6 +343,12 @@ async function writeSnapshot($: EngineInterface, ending?: { sessionId: string })
         .catch(() => undefined),
     ])
     const breakdown = usage?.context.breakdown
+    const weekEnd = usage?.rateLimits.find(limit => limit.kind === 'seven_day')?.resetsAt
+    if (isAnotherAccountsWeek(replyWeekEnd, weekEnd, at)) {
+      // a reply through another account's credential (a /login): whose, asked before the snapshot names one
+      await askAccount($, at)
+    }
+    replyWeekEnd = weekEnd ?? replyWeekEnd
     const snapshot = {
       version: 1,
       sessionId,

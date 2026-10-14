@@ -88,13 +88,26 @@ minutes, for a sign-in changed mid-session) and puts `account` in its snapshot a
 own shared file. `mergeUsage` groups every source by account id first and settles each group alone.
 A source that names no account (a session that has not reloaded the mod, or whose profile read
 fails) joins the account whose weekly window resets at the same time; what is left forms one
-unnamed account. An account with no session on the board is not shown beside one that has. An
+unnamed account. An account with no live session is not shown beside one that has. An
 account whose every session runs in the desktop app is left out too, unless
 `agentBoard.usageOfDesktopApp` is on: the extension reads each session's `entrypoint` from its
 transcript (`claude-vscode`, `claude-desktop`, `cli`; every row carries it, and the last row read
 counts: a conversation begun in the desktop app and resumed in VS Code is VS Code's), in the same read that
 finds the title, so for the first seconds after a reload it is not known and such an account shows. The
 email is personal data: it lives in the board's files only, and `live-smoke.js` prints the id, not it.
+
+**Usage: a /login moves every session to another account at once.** The credential is shared, so
+after `/login` each open session spends from the new account while it still names the old one. Until
+0.7.3 that lasted up to the 10-minute recheck: its shared reads landed in the old account's file and
+its replies' readings were filed under the old account, and the board showed two accounts with the
+same figures. An account's weekly window ends at one time until it has ended, so a reading whose week
+ends elsewhere while the earlier week still runs is another account's (`isAnotherAccountsWeek`). The
+mod then asks the profile at once (`askAccount`): in `maybeReadPlan` before the read is written (only
+the same account confirmed lets it into the file), and in `writeSnapshot` before a reply's reading is
+filed. This costs no request until a week jumps. Two accounts whose weeks end within 10 minutes of
+each other are not told apart this way; the recheck still catches them. A session that stopped
+without closing (a window reload ends its process without `session.end`) stays on the board for
+`KEEP_OPEN_MS` naming the account it last knew, so only a live session keeps an account shown.
 
 **One usage read for all sessions of an account.** Each session polling by itself got HTTP 429 from
 the endpoint and left the board minutes behind. Hence the shared file, 30 seconds between reads, and a backoff that

@@ -356,6 +356,22 @@ async function main() {
     const gone = mergeUsage([session('vscode', A, 1, 37, WEEK_A)], [read(A, 2, 37, WEEK_A, now - 90_000), read(B, 4, 33, WEEK_B, now - 90_000)], 'vscode')
     assert.deepEqual(gone.accounts.map(account => account.id), ['aaaa1111'])
 
+    // gone includes stopped without closing (a window reload ends its process): after a /login from B to A,
+    // such a session still names B for hours, and must not keep B on the board beside A
+    const stopped = { ...session('reloaded', B, 4, 33, WEEK_B), updatedAt: now - 10 * 60_000 }
+    const afterLogin = mergeUsage([session('vscode', A, 1, 37, WEEK_A), stopped], [read(A, 2, 37, WEEK_A, now - 90_000), read(B, 4, 33, WEEK_B, now - 90_000)], 'vscode')
+    assert.deepEqual(afterLogin.accounts.map(account => account.id), ['aaaa1111'])
+    // a closed one likewise, though it lingers on the board while its subagents are shown
+    const closed = { ...session('closed', B, 4, 33, WEEK_B), isClosed: true, agents: [{ id: 'x', status: 'done' }] }
+    assert.deepEqual(mergeUsage([session('vscode', A, 1, 37, WEEK_A), closed], [], 'vscode').accounts.map(account => account.id), ['aaaa1111'])
+    // a session idle but alive (its heartbeat keeps it young) keeps its account shown
+    assert.deepEqual(
+      mergeUsage([session('vscode', A, 1, 37, WEEK_A), { ...session('idle', B, 4, 33, WEEK_B), updatedAt: now - 60_000 }], [], 'vscode').accounts.map(
+        account => account.id,
+      ),
+      ['aaaa1111', 'bbbb2222'],
+    )
+
     // with no account known anywhere, one unnamed account: the single settling it always was
     const unknown = mergeUsage([session('one', undefined, 1, 37, WEEK_A), session('two', undefined, 9, 34, WEEK_B, now - 5_000)], [], 'one')
     assert.deepEqual(unknown.accounts.map(account => account.id), [''])

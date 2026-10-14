@@ -1,6 +1,6 @@
 {
   "name": "agent-board",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Writes each session's subagents, activity, context fill and subscription usage to ~/.claude/agent-board for the Agent Board VS Code extension, and draws a subagent pane in the terminal (/agent-board)",
   "author": { "name": "JeremyHo1123", "url": "https://github.com/JeremyHo1123" },
   "homepage": "https://github.com/JeremyHo1123/claude-code-agent-board",

@@ -154,6 +154,32 @@ export function planFileOf(account: PlanAccount | undefined): string {
   return account === undefined ? 'plan.json' : `plan-${account.id}.json`
 }
 
+/** When a read's weekly window ends: what tells one account's readings from another's. */
+export function weekEndOf(plan: PlanUsage | undefined): string | undefined {
+  return plan?.windows.find(window => window.key === 'seven_day')?.resetsAt
+}
+
+/** Two readings of one weekly window: its end moves by no more than a few minutes between reads. */
+const SAME_WEEK_MS = 10 * 60_000
+
+/**
+ * Whether a reading of the weekly window is another account's than an earlier one. An account's week
+ * ends at one time until it has ended, so a week that ends elsewhere while the earlier one still runs
+ * came through another sign-in: a /login moved the credential the session holds to another account.
+ * With either end unknown, nothing says so.
+ */
+export function isAnotherAccountsWeek(earlier: string | undefined, later: string | undefined, at: number): boolean {
+  const before = Date.parse(earlier ?? '')
+  const after = Date.parse(later ?? '')
+
+  return (
+    Number.isFinite(before) &&
+    Number.isFinite(after) &&
+    at < before - SAME_WEEK_MS &&
+    Math.abs(after - before) > SAME_WEEK_MS
+  )
+}
+
 /**
  * The board's folder: `agent-board` under Claude Code's own folder, which is CLAUDE_CONFIG_DIR
  * where that is set and `.claude` in the home folder otherwise (USERPROFILE on Windows, HOME
