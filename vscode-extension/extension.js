@@ -44,7 +44,29 @@ function isSnapshot(value) {
   )
 }
 
-const LIMIT_LABEL = { five_hour: '5-hour session', seven_day: 'Weekly · all models', spend_limit: 'Spend limit' }
+const LIMIT_LABEL = {
+  five_hour: '5-hour session',
+  seven_day: 'Weekly · all models',
+  seven_day_opus: 'Weekly · Opus',
+  seven_day_sonnet: 'Weekly · Sonnet',
+  spend_limit: 'Spend limit',
+}
+
+/**
+ * A window's label, worded by the extension from its key rather than taken from the file: a session
+ * still on an older mod writes its own words there (Traditional Chinese until 0.9.0), and any session
+ * of the account may write the shared read.
+ */
+function windowLabelOf(key, written) {
+  if (LIMIT_LABEL[key] !== undefined) {
+    return LIMIT_LABEL[key]
+  }
+  if (key.startsWith('model:')) {
+    return `Weekly · ${key.slice('model:'.length)}`
+  }
+
+  return written || key
+}
 const WINDOW_ORDER = ['five_hour', 'seven_day']
 /** A titled transcript is re-read this seldom (a rename shows by then); an untitled one sooner, as its title comes after the first turn. */
 const TITLE_RECHECK_MS = 60_000
@@ -100,7 +122,7 @@ function settleWindow(key, all) {
 
   return {
     key,
-    label: named ? named.label : LIMIT_LABEL[key] || key,
+    label: windowLabelOf(key, named && named.label),
     percent: best.percent,
     resetsAt: best.resetsAt || (anchor && anchor.resetsAt),
     at: best.at,

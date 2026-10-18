@@ -202,7 +202,7 @@ async function main() {
     assert.deepEqual(merged.planError, { at: 300, status: 429 })
     assert.equal(merged.planNextAt, 400)
 
-    // with no shared read yet, the responses alone; a known kind gets its Chinese label
+    // with no shared read yet, the responses alone; a known kind gets its label
     const alone = mergeUsage([fresh], undefined)
     assert.deepEqual(alone.list.map(window => [window.key, window.label]), [
       ['five_hour', '5-hour session'],
@@ -231,6 +231,27 @@ async function main() {
     )
     assert.equal(transition.extra.usedCredits, 130, 'the extra line follows the freshest read')
     assert.equal(transition.planAt, 250)
+
+    // a read written by an older mod in its own words: the extension words a known window itself,
+    // a per-model one from its name, and keeps the written label only for a key it does not know
+    const olderWords = {
+      plan: {
+        fetchedAt: 100,
+        windows: [
+          { key: 'five_hour', label: 'old words for five hours', percent: 50 },
+          { key: 'seven_day_sonnet', label: 'old words for Sonnet', percent: 4 },
+          { key: 'model:Fable', label: 'old words for Fable', percent: 7 },
+          { key: 'something_new', label: 'Something new', percent: 1 },
+        ],
+      },
+      nextAttemptAt: 400,
+    }
+    assert.deepEqual(mergeUsage([], olderWords).list.map(window => [window.key, window.label]), [
+      ['five_hour', '5-hour session'],
+      ['seven_day_sonnet', 'Weekly · Sonnet'],
+      ['model:Fable', 'Weekly · Fable'],
+      ['something_new', 'Something new'],
+    ])
   }
 
   // ── which reading of a window is the truth ────────────────────

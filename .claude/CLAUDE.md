@@ -109,6 +109,11 @@ each other are not told apart this way; the recheck still catches them. A sessio
 without closing (a window reload ends its process without `session.end`) stays on the board for
 `KEEP_OPEN_MS` naming the account it last knew, so only a live session keeps an account shown.
 
+**Usage: the extension words the windows itself.** The labels in a plan file are whatever the mod
+of the session that last read it wrote, and sessions that have not reloaded keep an older mod: after
+0.9.0 moved the interface to English, the board still showed the Chinese labels of 0.8.0 sessions.
+So `windowLabelOf` names a window by its key and keeps a written label only for a key it does not know.
+
 **One usage read for all sessions of an account.** Each session polling by itself got HTTP 429 from
 the endpoint and left the board minutes behind. Hence the shared file, 30 seconds between reads, and a backoff that
 doubles from 60 seconds to 10 minutes. Do not shorten the interval without measuring.
@@ -204,8 +209,12 @@ node test/live-smoke.js           # read-only, one poll over this machine's real
 ```
 
 `preview/index.html` and `preview/panel.html` show the webviews in a browser with made-up data.
-Check a change to the interface there, in both themes and at 300 px wide, before packaging.
+Check a change to the interface there, in both themes and at 300 px and 180 px wide, before packaging.
 Headless Chrome will not go narrower than 500 px, so the pages take `?w=` for the sidebar's width.
+`?debug=1` writes into the page title every element that shows past the sidebar's right edge (what
+an ellipsis or a scrolling block clips is left out); read it with Chrome's `--headless=new --dump-dom`.
+Below 250 px of board width each meter stacks its reset time under the bar, and below 440 px the
+usage card has one column of `minmax(0, 1fr)`: a plain `1fr` lets the text widen the card past the sidebar.
 
 ## Releasing
 

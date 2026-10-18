@@ -16,7 +16,7 @@
     fallback=1     no Claude tab matched yet
     detail=1       the running agent's detail open; detail=done, the ended agent's with its report
     click=3        with a detail open: opens that step (0-based), as a click would
-    debug=1        writes any element wider than the window into the page title
+    debug=1        writes any element reaching past the body's right edge into the page title
 -->
 <style>
   /* stand-ins for what VS Code injects into a webview */
@@ -97,11 +97,22 @@
     }
     if (params.get('debug') === '1') {
       setTimeout(() => {
+        // with ?w= the body is the sidebar, narrower than the window
+        const edge = document.body.getBoundingClientRect().right
+        // what an ancestor clips (an ellipsis, a scrolling block) does not show past the edge
+        const isClipped = node => {
+          for (let up = node.parentElement; up && up.id !== 'app'; up = up.parentElement) {
+            if (getComputedStyle(up).overflowX !== 'visible' && up.getBoundingClientRect().right <= edge + 1) {
+              return true
+            }
+          }
+          return false
+        }
         const wide = [...document.querySelectorAll('#app *')]
-          .filter(node => node.getBoundingClientRect().right > innerWidth + 1)
+          .filter(node => node.getClientRects().length > 0 && node.getBoundingClientRect().right > edge + 1 && !isClipped(node))
           .slice(0, 8)
           .map(node => `${node.tagName}.${node.className}:${Math.round(node.getBoundingClientRect().right)}`)
-        document.title = `inner=${innerWidth} scroll=${document.documentElement.scrollWidth} wide=${wide.join(' | ')}`
+        document.title = `edge=${Math.round(edge)} wide=${wide.join(' | ') || 'none'}`
       }, 500)
     }
   })

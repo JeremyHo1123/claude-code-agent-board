@@ -130,26 +130,35 @@ body.vscode-high-contrast-light {
   background: var(--raise);
 }
 
+/* how fresh the figures are moves under the title where both do not fit on one line */
 .usage-head {
   display: flex;
+  flex-wrap: wrap;
   grid-column: 1 / -1;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 2px 8px;
   margin-bottom: -3px;
 }
 
 .usage-title {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-2);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .usage-fresh {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-3);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -196,8 +205,9 @@ body.vscode-high-contrast-light {
   font-weight: 600;
 }
 
-/* the current conversation's sub-head: what is measured, then whose */
+/* the current conversation's sub-head: what is measured, then whose, on one line while there is room */
 .usage-head.is-sub {
+  flex-wrap: nowrap;
   justify-content: flex-start;
   min-width: 0;
 }
@@ -305,7 +315,8 @@ body.vscode-high-contrast-light {
 /* a narrow sidebar: one meter per row, the reset time beside the value */
 @container board (max-width: 440px) {
   .usage {
-    grid-template-columns: 1fr;
+    /* the column may be narrower than its text: the text gives way, never the card */
+    grid-template-columns: minmax(0, 1fr);
     gap: 9px;
   }
 
@@ -318,6 +329,39 @@ body.vscode-high-contrast-light {
 
   .meter-track {
     margin-bottom: 0;
+  }
+}
+
+/*
+ * A very narrow sidebar: label, reset time and value no longer fit on one line, so the reset time
+ * goes under the bar again, the conversation's name under its heading, and a heading gives way too.
+ */
+@container board (max-width: 250px) {
+  .meter {
+    grid-template-areas:
+      "label value"
+      "track track"
+      "foot foot";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .meter-track {
+    margin-bottom: 5px;
+  }
+
+  .usage-head.is-sub {
+    flex-wrap: wrap;
+  }
+
+  .usage-head.is-sub .usage-title,
+  .usage-head.is-account .usage-title,
+  .usage-head.is-account .usage-fresh {
+    flex: 0 1 auto;
+  }
+
+  /* the email takes a line of its own rather than shrinking to nothing beside the title */
+  .usage-head.is-account .usage-session {
+    flex: 1 1 auto;
   }
 }
 
@@ -1299,6 +1343,17 @@ body.is-panel {
   color: var(--ink-3);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
+}
+
+/* a very narrow sidebar: a step's offset from the start gives its room to the rest of the line */
+@container board (max-width: 250px) {
+  .d-step-line {
+    grid-template-columns: 14px auto minmax(0, 1fr) auto;
+  }
+
+  .d-step-at {
+    display: none;
+  }
 }
 
 .d-step.is-open .d-step-line {
