@@ -23,12 +23,21 @@ export type AgentBoardRow = {
   tokens?: AgentBoardTokens
 }
 
+/** The context window's fill as /context estimates it, for the band above the prompt. */
+export type AgentBoardContext = {
+  percent: number
+  tokens: number
+  window: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-board': {
       rows: AgentBoardRow[]
       now: number
       isDismissed: boolean
+      /** Null until the first snapshot has read the session's usage. */
+      context: AgentBoardContext | null
     }
   }
 }

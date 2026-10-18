@@ -2,7 +2,7 @@
   "name": "agent-board",
   "displayName": "Agent Board",
   "description": "A live board for Claude Code inside VS Code: every conversation's subagents and their task details, subscription usage, and context fill, fed by the agent-board mod",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "publisher": "jeremy-local",
   "license": "MIT",
   "homepage": "https://github.com/JeremyHo1123/claude-code-agent-board#readme",

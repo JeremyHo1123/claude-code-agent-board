@@ -8,7 +8,10 @@ import {
   clip,
   countRows,
   describeCall,
+  fillBar,
+  fillTone,
   formatElapsed,
+  formatTokens,
   isAnotherAccountsWeek,
   orderRows,
   parseAccount,
@@ -44,6 +47,10 @@ const AUTO_OPEN_AT = 2
 const rows = atom({ plugin: 'agent-board', key: 'rows' } as const, [])
 const now = atom({ plugin: 'agent-board', key: 'now' } as const, 0)
 const isDismissed = atom({ plugin: 'agent-board', key: 'isDismissed' } as const, false)
+/** What the band above the prompt draws; each snapshot refreshes it. */
+const context = atom({ plugin: 'agent-board', key: 'context' } as const, null)
+/** The band's bar: at most this many cells, fewer in a narrow column. */
+const BAND_BAR_CELLS = 20
 
 /** How `$.agent.list()` statuses map onto a row's, for runs whose turn.complete never came (killed). */
 const LIST_STATUS: Readonly<Record<string, AgentBoardStatus>> = {
@@ -110,6 +117,9 @@ let accountNextAt = 0
 let replyWeekEnd: string | undefined
 /** When this session last saw an API response arrive (a tool call follows one): how fresh its rate-limit readings are. */
 let lastResponseAt = 0
+/** For /agent-board's diagnosis: how often a surface asked for the band, and on which surfaces. */
+let bandAsks = 0
+const bandSurfaces = new Set<string>()
 /** Module state, as the board reads it: a reload starts it over as idle, the next turn corrects it. */
 let activity: SessionActivity = { state: 'idle', since: Date.now() }
 
@@ -377,6 +387,18 @@ async function writeSnapshot($: EngineInterface, ending?: { sessionId: string })
       agents: list,
     }
 
+    const percent = snapshot.usage?.contextPercent
+    const tokens = snapshot.usage?.contextTokens
+    const window = snapshot.usage?.contextWindow
+    if (percent !== undefined && tokens !== undefined && window !== undefined && ending === undefined) {
+      // the band redraws only when a figure moved
+      await update($, context, last =>
+        last !== null && last.percent === percent && last.tokens === tokens && last.window === window
+          ? last
+          : { percent, tokens, window },
+      )
+    }
+
     await $.fs.write(await boardPath($, `sessions/${sessionId}.json`), JSON.stringify(snapshot))
   } catch {
     // the terminal pane, where there is one, still stands
@@ -489,9 +511,16 @@ export const register: Register = on => {
 
     const list = await read($, rows)
     const board = renderMarkdown(list, Math.max(at, ...list.map(row => row.lastAt)), SHOWN_ENDED, false)
+    const surfaces = await $.session.surfaces().catch(() => [] as readonly string[])
+    const fill = await read($, context)
+    const diagnosis = [
+      `[上下文橫條] 連上的畫面：${surfaces.join(', ') || '（無）'}`,
+      `[上下文橫條] 被要求畫過 ${bandAsks} 次${bandSurfaces.size > 0 ? `（${[...bandSurfaces].join(', ')}）` : ''}`,
+      `[上下文橫條] 目前數字：${fill === null ? '（還沒讀到）' : `${fill.percent}% · ${formatTokens(fill.tokens)} / ${formatTokens(fill.window)}`}`,
+    ].join('\n')
 
     return {
-      text: `${board}\n圖形面板：VS Code 左側活動列的 Agent Board 圖示，或 Ctrl+Shift+P →「Agent Board: 打開子代理面板」。`,
+      text: `${board}\n圖形面板：VS Code 左側活動列的 Agent Board 圖示，或 Ctrl+Shift+P →「Agent Board: 打開子代理面板」。\n\n${diagnosis}`,
     }
   })
 
@@ -619,6 +648,30 @@ export const register: Register = on => {
     await writeSnapshot($)
 
     return result
+  })
+
+  // The context fill directly above the prompt, in the terminal and the desktop app (VS Code's
+  // Claude panel draws no band: there the extension's status bar shows it).
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    bandAsks += 1
+    bandSurfaces.add(e.surface)
+    const fill = await read($, context)
+    if (e.props.hasSurvey || fill === null) {
+      return next(e)
+    }
+
+    const { Box, Text } = $.ui.resolve(e)
+    // the label and the figures take about 30 cells; the bar gets what is left, up to its cap
+    const cells = Math.max(5, Math.min(BAND_BAR_CELLS, e.props.bodyColumns - 30))
+
+    return (
+      <Box flexDirection="row">
+        <Text dimColor>上下文 </Text>
+        <Text color={fillTone(fill.percent)}>{fillBar(fill.percent, cells)}</Text>
+        <Text bold>{` ${Math.round(fill.percent)}%`}</Text>
+        <Text dimColor>{` · ${formatTokens(fill.tokens)} / ${formatTokens(fill.window)}`}</Text>
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

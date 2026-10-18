@@ -5,6 +5,8 @@ import type { TestBody } from 'claude-code/testing'
 import {
   boardRootOf,
   describeCall,
+  fillBar,
+  fillTone,
   formatElapsed,
   formatTokens,
   isAnotherAccountsWeek,
@@ -47,6 +49,19 @@ test('the plan usage body reads into windows, and junk reads as none', async () 
   expect(parsePlanUsage({ error: 'nope' }, 0)).toBeUndefined()
   expect(parsePlanUsage('not json', 0)).toBeUndefined()
   expect(parsePlanUsage({ five_hour: { utilization: '62' } }, 0)).toBeUndefined()
+})
+
+test("the band's bar fills in proportion, inside its width, and warms as it fills", async () => {
+  expect(fillBar(34, 10)).toBe('███░░░░░░░')
+  expect(fillBar(0, 5)).toBe('░░░░░')
+  expect(fillBar(100, 5)).toBe('█████')
+  // a figure past either end stays inside the bar
+  expect(fillBar(130, 4)).toBe('████')
+  expect(fillBar(-5, 4)).toBe('░░░░')
+  expect(fillBar(50, 0)).toBe('█')
+  expect(fillTone(69)).toBe('success')
+  expect(fillTone(70)).toBe('warning')
+  expect(fillTone(90)).toBe('error')
 })
 
 /** What the profile endpoint answers: whose credential the session holds. */

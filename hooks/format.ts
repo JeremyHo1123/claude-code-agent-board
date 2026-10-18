@@ -268,6 +268,19 @@ export function formatTokens(count: number): string {
   return String(count)
 }
 
+/** A bar of `width` cells, filled in proportion to `percent`. */
+export function fillBar(percent: number, width: number): string {
+  const cells = Math.max(1, Math.floor(width))
+  const filled = Math.max(0, Math.min(cells, Math.round((percent / 100) * cells)))
+
+  return '█'.repeat(filled) + '░'.repeat(cells - filled)
+}
+
+/** The theme color of a fill: calm below 70%, a warning from there, an error from 90%. */
+export function fillTone(percent: number): 'success' | 'warning' | 'error' {
+  return percent >= 90 ? 'error' : percent >= 70 ? 'warning' : 'success'
+}
+
 /** m:ss, or h:mm:ss from an hour. */
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000))
