@@ -96,23 +96,23 @@ async function main() {
     ])
     const second = take()
     assert.equal(second.length, 4, JSON.stringify(second))
-    assert.ok(has(second, 'info', '✓ 3 個子代理完成'), JSON.stringify(second))
-    assert.ok(has(second, 'error', '✕ 子代理失敗：agent a4'), JSON.stringify(second))
-    assert.ok(has(second, 'info', '「my-notes」這一輪做完了'), JSON.stringify(second))
-    assert.ok(has(second, 'warning', '5 小時工作階段已用 82%'), JSON.stringify(second))
+    assert.ok(has(second, 'info', '✓ 3 subagents done'), JSON.stringify(second))
+    assert.ok(has(second, 'error', '✕ Subagent failed: agent a4'), JSON.stringify(second))
+    assert.ok(has(second, 'info', '"my-notes" finished its turn'), JSON.stringify(second))
+    assert.ok(has(second, 'warning', '5-hour session: 82% used'), JSON.stringify(second))
 
     // 3. a wait that has lasted 5 s is not news yet; at 20 s it is, once — named by the title when there is one
     now += 60_000
     const waitSince = now - 5_000
     const waiting = () => ({
-      ...session({ state: 'waiting', since: waitSince, reason: '等你允許 Bash', kind: 'permission' }, [], 82),
-      title: '整理讀書筆記',
+      ...session({ state: 'waiting', since: waitSince, reason: 'needs your OK for Bash', kind: 'permission' }, [], 82),
+      title: 'Tidy up reading notes',
     })
     poll([waiting()])
     assert.deepEqual(take(), [], 'a 5 s wait stays quiet')
     now += 15_000
     poll([waiting()])
-    assert.deepEqual(take(), [['warning', '「整理讀書筆記」的 Claude 在等你：等你允許 Bash']])
+    assert.deepEqual(take(), [['warning', 'Claude in "Tidy up reading notes" is waiting for you: needs your OK for Bash']])
     now += 5_000
     poll([waiting()])
     assert.deepEqual(take(), [], 'the same wait is announced once')
@@ -121,7 +121,7 @@ async function main() {
     poll([session({ state: 'working', since: now }, [], 91)])
     const fourth = take()
     assert.equal(fourth.length, 1, JSON.stringify(fourth))
-    assert.ok(has(fourth, 'error', '5 小時工作階段已用 91%'), JSON.stringify(fourth))
+    assert.ok(has(fourth, 'error', '5-hour session: 91% used'), JSON.stringify(fourth))
 
     // 5. a reset (a new resetsAt) drops back silently; crossing 80% again is news again
     poll([session({ state: 'working', since: now }, [], 10, '2030-01-01T05:00:00Z')])
@@ -129,7 +129,7 @@ async function main() {
     poll([session({ state: 'working', since: now }, [], 85, '2030-01-01T05:00:00Z')])
     const fifth = take()
     assert.equal(fifth.length, 1, JSON.stringify(fifth))
-    assert.ok(has(fifth, 'warning', '5 小時工作階段已用 85%'), JSON.stringify(fifth))
+    assert.ok(has(fifth, 'warning', '5-hour session: 85% used'), JSON.stringify(fifth))
 
     // 6. a short turn ending is no news
     now += 1_000
@@ -143,7 +143,7 @@ async function main() {
       if (source === 'plan') {
         // the shared read is fresher than any response
         poll([{ ...session({ state: 'idle', since: now }, [], 0), usage: undefined }], {
-          plan: { fetchedAt: now, windows: [{ key: 'five_hour', label: '5 小時工作階段', percent, resetsAt: reset }] },
+          plan: { fetchedAt: now, windows: [{ key: 'five_hour', label: '5-hour session', percent, resetsAt: reset }] },
         })
       } else {
         poll([session({ state: 'idle', since: now }, [], percent, reset)])
@@ -157,7 +157,7 @@ async function main() {
     sway(80, 'response')
     const swayed = take()
     assert.equal(swayed.length, 1, JSON.stringify(swayed))
-    assert.ok(has(swayed, 'warning', '5 小時工作階段已用 80%'), JSON.stringify(swayed))
+    assert.ok(has(swayed, 'warning', '5-hour session: 80% used'), JSON.stringify(swayed))
 
     // 8. a reading without a reset time belongs to the window already known: no silent restart, no repeat
     now += 1_000
@@ -171,9 +171,9 @@ async function main() {
       plan: {
         fetchedAt: 100,
         windows: [
-          { key: 'five_hour', label: '5 小時工作階段', percent: 50, resetsAt: '2030-01-01T00:00:00.000000+00:00' },
-          { key: 'seven_day', label: '每週・所有模型', percent: 20, resetsAt: '2030-01-05T00:00:00Z' },
-          { key: 'seven_day_opus', label: '每週・Opus', percent: 10, resetsAt: '2030-01-05T00:00:00Z' },
+          { key: 'five_hour', label: '5-hour session', percent: 50, resetsAt: '2030-01-01T00:00:00.000000+00:00' },
+          { key: 'seven_day', label: 'Weekly · all models', percent: 20, resetsAt: '2030-01-05T00:00:00Z' },
+          { key: 'seven_day_opus', label: 'Weekly · Opus', percent: 10, resetsAt: '2030-01-05T00:00:00Z' },
         ],
         extra: { usedCredits: 120, monthlyLimit: 5000, currency: 'USD', percent: 2.4 },
       },
@@ -194,7 +194,7 @@ async function main() {
       ],
     )
     // the plan's label and reset carry over to a response reading that lacks them
-    assert.equal(merged.list[1].label, '每週・所有模型')
+    assert.equal(merged.list[1].label, 'Weekly · all models')
     assert.equal(merged.list[1].resetsAt, '2030-01-05T00:00:00.000Z')
     assert.equal(merged.list[0].resetsAt, '2030-01-01T00:00:00.000Z')
     assert.equal(merged.extra.usedCredits, 120)
@@ -205,8 +205,8 @@ async function main() {
     // with no shared read yet, the responses alone; a known kind gets its Chinese label
     const alone = mergeUsage([fresh], undefined)
     assert.deepEqual(alone.list.map(window => [window.key, window.label]), [
-      ['five_hour', '5 小時工作階段'],
-      ['seven_day', '每週・所有模型'],
+      ['five_hour', '5-hour session'],
+      ['seven_day', 'Weekly · all models'],
     ])
     assert.equal(alone.planError, undefined)
 
@@ -216,7 +216,7 @@ async function main() {
       usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 30 }] },
       plan: {
         fetchedAt: 250,
-        windows: [{ key: 'seven_day_opus', label: '每週・Opus', percent: 12, resetsAt: '2030-01-05T00:00:00Z' }],
+        windows: [{ key: 'seven_day_opus', label: 'Weekly · Opus', percent: 12, resetsAt: '2030-01-05T00:00:00Z' }],
         extra: { usedCredits: 130, monthlyLimit: 5000, currency: 'USD', percent: 2.6 },
       },
     }
@@ -243,7 +243,7 @@ async function main() {
       usage: { rateLimits: [{ kind: 'five_hour', percentUsed: percent, ...(resetsAt ? { resetsAt } : {}) }], rateLimitsAt: at },
     })
     const asked = (percent, at, resetsAt = R1) => ({
-      plan: { fetchedAt: at, windows: [{ key: 'five_hour', label: '5 小時工作階段', percent, ...(resetsAt ? { resetsAt } : {}) }] },
+      plan: { fetchedAt: at, windows: [{ key: 'five_hour', label: '5-hour session', percent, ...(resetsAt ? { resetsAt } : {}) }] },
     })
     const settle = (sessions, shared) => {
       const [window] = mergeUsage(sessions, shared).list
@@ -300,8 +300,8 @@ async function main() {
       plan: {
         fetchedAt,
         windows: [
-          { key: 'five_hour', label: '5 小時工作階段', percent: five, resetsAt: FIVE },
-          { key: 'seven_day', label: '每週・所有模型', percent: week, resetsAt: weekReset },
+          { key: 'five_hour', label: '5-hour session', percent: five, resetsAt: FIVE },
+          { key: 'seven_day', label: 'Weekly · all models', percent: week, resetsAt: weekReset },
         ],
       },
       nextAttemptAt: fetchedAt + 30_000,
@@ -409,7 +409,7 @@ async function main() {
     poll(85)
     const crossed = take()
     assert.equal(crossed.length, 1, JSON.stringify(crossed))
-    assert.ok(has(crossed, 'warning', '【b@example.com】5 小時工作階段已用 85%'), JSON.stringify(crossed))
+    assert.ok(has(crossed, 'warning', '[b@example.com] 5-hour session: 85% used'), JSON.stringify(crossed))
   }
 
   // ── the prompts the person typed, out of transcript rows ──────
@@ -417,20 +417,20 @@ async function main() {
     const row = fields => JSON.stringify({ type: 'user', timestamp: '2030-01-01T00:00:10.000Z', ...fields })
     const human = { kind: 'human' }
     const rows = [
-      row({ origin: human, message: { role: 'user', content: '把週報腳本改寫成 TypeScript\n先不要動測試' } }),
+      row({ origin: human, message: { role: 'user', content: 'Rewrite the weekly report script in TypeScript\nLeave the tests alone for now' } }),
       // what the engine put beside the prompt is not the prompt
-      row({ origin: human, message: { content: [{ type: 'text', text: '<system-reminder>注意</system-reminder>' }, { type: 'text', text: '為什麼這裡會回傳 undefined' }] } }),
-      row({ origin: human, message: { content: [{ type: 'image', source: {} }, { type: 'text', text: '長這樣' }] } }),
+      row({ origin: human, message: { content: [{ type: 'text', text: '<system-reminder>Note</system-reminder>' }, { type: 'text', text: 'Why does this return undefined' }] } }),
+      row({ origin: human, message: { content: [{ type: 'image', source: {} }, { type: 'text', text: 'It looks like this' }] } }),
       // a slash command, a tool's result, a skill's text, a subagent's prompt, a queued notification: none typed
       row({ origin: human, message: { content: '<command-name>/jump</command-name>' } }),
       row({ message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } }),
       row({ isMeta: true, origin: human, message: { content: [{ type: 'text', text: 'Base directory for this skill' }] } }),
-      row({ isSidechain: true, origin: human, message: { content: '搜尋本週論文' } }),
-      row({ origin: { kind: 'task-notification' }, message: { content: '子代理完成了' } }),
-      '{"type":"user","origin":{"kind":"human"},"message":{"content":"寫到一半', // caught mid-write
+      row({ isSidechain: true, origin: human, message: { content: 'Search for papers this week' } }),
+      row({ origin: { kind: 'task-notification' }, message: { content: 'A subagent finished' } }),
+      '{"type":"user","origin":{"kind":"human"},"message":{"content":"Half writ', // caught mid-write
     ]
     const prompts = promptsIn(rows.join('\n'))
-    assert.deepEqual(prompts.map(prompt => prompt.text), ['把週報腳本改寫成 TypeScript\n先不要動測試', '為什麼這裡會回傳 undefined', '長這樣'])
+    assert.deepEqual(prompts.map(prompt => prompt.text), ['Rewrite the weekly report script in TypeScript\nLeave the tests alone for now', 'Why does this return undefined', 'It looks like this'])
     assert.equal(prompts[0].at, Date.parse('2030-01-01T00:00:10.000Z'))
 
     // pasted text is the person's: its tags go, the text stays
@@ -439,35 +439,35 @@ async function main() {
       message: {
         content: [
           { type: 'text', text: '<browser_instruction>…</browser_instruction>' },
-          { type: 'text', text: '\n\n<pasted_content id="1234">\n接著寫第 3 到 5 章\n\n先讀這幾個檔案\n</pasted_content id="1234">\n' },
+          { type: 'text', text: '\n\n<pasted_content id="1234">\nGo on with chapters 3 to 5\n\nRead these files first\n</pasted_content id="1234">\n' },
         ],
       },
     })
-    assert.deepEqual(promptsIn(pasted).map(prompt => prompt.text), ['接著寫第 3 到 5 章\n\n先讀這幾個檔案'])
+    assert.deepEqual(promptsIn(pasted).map(prompt => prompt.text), ['Go on with chapters 3 to 5\n\nRead these files first'])
 
     // the first prompt, which labels the tab of a conversation Claude Code has not titled: typed, else a slash command
-    assert.equal(firstPromptIn(rows.join('\n')), '把週報腳本改寫成 TypeScript\n先不要動測試')
+    assert.equal(firstPromptIn(rows.join('\n')), 'Rewrite the weekly report script in TypeScript\nLeave the tests alone for now')
     assert.equal(firstPromptIn([rows[4], rows[3], rows[0]].join('\n')), '/jump')
-    assert.equal(firstPromptIn(pasted), '接著寫第 3 到 5 章\n\n先讀這幾個檔案')
-    const command = '<command-message>summarize</command-message>\n<command-name>/summarize</command-name>\n<command-args>整理讀書筆記</command-args>'
-    assert.equal(firstPromptIn(row({ origin: human, message: { content: command } })), '/summarize 整理讀書筆記')
+    assert.equal(firstPromptIn(pasted), 'Go on with chapters 3 to 5\n\nRead these files first')
+    const command = '<command-message>summarize</command-message>\n<command-name>/summarize</command-name>\n<command-args>tidy up reading notes</command-args>'
+    assert.equal(firstPromptIn(row({ origin: human, message: { content: command } })), '/summarize tidy up reading notes')
     assert.equal(firstPromptIn(rows.slice(4).join('\n')), undefined, 'nothing typed yet')
 
     // a prompt typed in the desktop app is stamped the same way: a conversation begun there lists whole
-    assert.equal(promptsIn(row({ entrypoint: 'claude-desktop', origin: human, message: { content: '在桌面版問的' } })).length, 1)
+    assert.equal(promptsIn(row({ entrypoint: 'claude-desktop', origin: human, message: { content: 'Asked in the desktop app' } })).length, 1)
     // the program is the one that wrote last: begun in the desktop app, carried on in VS Code, it is VS Code's
-    const begun = row({ entrypoint: 'claude-desktop', origin: human, message: { content: '在桌面版問的' } })
-    const resumed = row({ entrypoint: 'claude-vscode', origin: human, message: { content: '在 VS Code 接著問' } })
+    const begun = row({ entrypoint: 'claude-desktop', origin: human, message: { content: 'Asked in the desktop app' } })
+    const resumed = row({ entrypoint: 'claude-vscode', origin: human, message: { content: 'Carried on in VS Code' } })
     assert.equal(entrypointIn(Buffer.from(`${begun}\n${resumed}\n`)), 'claude-vscode')
     assert.equal(entrypointIn(Buffer.from(`${begun}\n`)), 'claude-desktop')
     assert.equal(entrypointIn(Buffer.from(`${begun}\n{"type":"user","entrypoint":"claude-vs`)), undefined)
     assert.equal(entrypointIn(Buffer.from('{"type":"user"}')), undefined)
 
     // listed by its first line, cut to fit; searched for by the start of that line
-    assert.equal(promptHead('\n  把週報腳本改寫成 TypeScript\n先不要動測試', 80), '把週報腳本改寫成 TypeScript')
-    assert.equal(promptHead('一二三四五六', 4), '一二三…')
-    assert.equal(promptNeedle('  為什麼這裡會回傳 undefined  \n第二行'), '為什麼這裡會回傳 undefined')
-    assert.equal(Array.from(promptNeedle('好'.repeat(50))).length, 32)
+    assert.equal(promptHead('\n  Rewrite the weekly report script in TypeScript\nLeave the tests alone for now', 80), 'Rewrite the weekly report script in TypeScript')
+    assert.equal(promptHead('🙂🙂🙂🙂🙂🙂', 4), '🙂🙂🙂…')
+    assert.equal(promptNeedle('  Why does this return undefined  \nsecond line'), 'Why does this return undefined')
+    assert.equal(Array.from(promptNeedle('🙂'.repeat(50))).length, 32)
 
     // the board reads a transcript as it grows: whole rows only, the rest with what comes after
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-board-prompts-'))
@@ -476,15 +476,15 @@ async function main() {
     board.titles.set('s1', { path: file })
     fs.writeFileSync(file, `${rows[0]}\n${rows[1].slice(0, 40)}`)
     await board.refreshPrompts('s1')
-    assert.deepEqual(board.promptsOf('s1').list.map(prompt => prompt.head), ['把週報腳本改寫成 TypeScript'])
+    assert.deepEqual(board.promptsOf('s1').list.map(prompt => prompt.head), ['Rewrite the weekly report script in TypeScript'])
     fs.appendFileSync(file, `${rows[1].slice(40)}\n`)
     now += 5_000
     await board.refreshPrompts('s1')
     assert.deepEqual(board.promptsOf('s1'), {
       sessionId: 's1',
       list: [
-        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: '把週報腳本改寫成 TypeScript' },
-        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: '為什麼這裡會回傳 undefined' },
+        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: 'Rewrite the weekly report script in TypeScript' },
+        { at: Date.parse('2030-01-01T00:00:10.000Z'), head: 'Why does this return undefined' },
       ],
     })
     assert.equal(board.promptsOf('other'), undefined)
@@ -493,36 +493,36 @@ async function main() {
 
   // ── tab labels and transcript titles ──────────────────────────
   {
-    assert.equal(tabLabelOf('整理讀書筆記'), '整理讀書筆記')
+    assert.equal(tabLabelOf('Tidy up reading notes'), 'Tidy up reading notes')
     const exactly25 = 'a'.repeat(25)
     assert.equal(tabLabelOf(exactly25), exactly25)
     assert.equal(tabLabelOf('Compare add and concat for skip connections in PyTorch'), 'Compare add and concat f…')
 
     // an untitled conversation's tab carries its first prompt, cut the same way: as typed, or as listed after a reload
-    const typed = '/summarize 整理 2030-01-01 的讀書筆記\n\n要改的地方'
+    const typed = '/summarize 2030-01-01 reading notes\n\nWhat to change'
     assert.equal(isPromptLabel(tabLabelOf(typed), typed), true)
     assert.equal(isPromptLabel(tabLabelOf(typed.replace(/\s+/g, ' ')), typed), true)
-    assert.equal(isPromptLabel(tabLabelOf('第 6 段\n\n先讀這幾個檔案，讀完再動手做下一步'), '第 6 段 先讀這幾個檔案，讀完再動手做下一步'), true)
+    assert.equal(isPromptLabel(tabLabelOf('Part 6\n\nRead these files first, then do the next step'), 'Part 6 Read these files first, then do the next step'), true)
     assert.equal(isPromptLabel('/jump', '/jump'), true)
-    assert.equal(isPromptLabel('/jump', '/jump 到第二段'), false, 'a label not cut is the whole prompt')
-    assert.equal(isPromptLabel(tabLabelOf(typed), '/summarize 整理 2030-02-01 的讀書筆記'), false)
-    assert.equal(isPromptLabel('Claude Code', '整理讀書筆記'), false)
-    assert.equal(isPromptLabel('…', '整理讀書筆記'), false)
+    assert.equal(isPromptLabel('/jump', '/jump to part two'), false, 'a label not cut is the whole prompt')
+    assert.equal(isPromptLabel(tabLabelOf(typed), '/summarize 2030-02-01 reading notes'), false)
+    assert.equal(isPromptLabel('Claude Code', 'Tidy up reading notes'), false)
+    assert.equal(isPromptLabel('…', 'Tidy up reading notes'), false)
 
     const rows = [
       '{"type":"user","message":"hi"}',
-      '{"type":"ai-title","sessionId":"x","aiTitle":"舊標題"}',
+      '{"type":"ai-title","sessionId":"x","aiTitle":"Old title"}',
       '{"type":"assistant","message":"…"}',
-      '{"type":"ai-title","aiTitle":"新標題","sessionId":"x"}',
-      '{"type":"ai-title","aiTitle":"寫到一半', // caught mid-write
+      '{"type":"ai-title","aiTitle":"New title","sessionId":"x"}',
+      '{"type":"ai-title","aiTitle":"Half writ', // caught mid-write
     ]
-    assert.deepEqual(titlesIn(Buffer.from(rows.join('\n'))), { ai: '新標題' })
+    assert.deepEqual(titlesIn(Buffer.from(rows.join('\n'))), { ai: 'New title' })
     assert.deepEqual(
-      titlesIn(Buffer.from([...rows.slice(0, 4), '{"type":"custom-title","customTitle":"我改的名字","sessionId":"x"}'].join('\n'))),
-      { custom: '我改的名字', ai: '新標題' },
+      titlesIn(Buffer.from([...rows.slice(0, 4), '{"type":"custom-title","customTitle":"My own name","sessionId":"x"}'].join('\n'))),
+      { custom: 'My own name', ai: 'New title' },
     )
     // a stretch that starts mid-row: the cut row is skipped, not misread
-    assert.deepEqual(titlesIn(Buffer.from('e":"ai-title","aiTitle":"殘片"}\n{"type":"user"}')), {})
+    assert.deepEqual(titlesIn(Buffer.from('e":"ai-title","aiTitle":"fragment"}\n{"type":"user"}')), {})
   }
 
   // ── reading titles from a transcript: the tail, the whole file once, then only what was appended ──
@@ -531,37 +531,37 @@ async function main() {
     const file = path.join(dir, 'x.jsonl')
     // the title sits at the start, then more than the tail's megabyte of other rows
     const filler = `${'{"type":"assistant","message":"' + 'x'.repeat(1000) + '"}\n'}`.repeat(1200)
-    fs.writeFileSync(file, `{"type":"ai-title","aiTitle":"開頭的標題","sessionId":"x"}\n${filler}`)
+    fs.writeFileSync(file, `{"type":"ai-title","aiTitle":"The title at the start","sessionId":"x"}\n${filler}`)
 
     const board = new AgentBoard({ subscriptions: [] })
     board.titles.set('x', { path: file, size: 0, custom: undefined, ai: undefined, isScanned: false, checkedAt: 0, soughtAt: 0 })
     const live = [{ sessionId: 'x', isClosed: false }]
     await board.refreshTitles(live)
-    assert.equal(board.titleOf('x'), '開頭的標題', 'the whole-file scan finds a title the tail lacks')
+    assert.equal(board.titleOf('x'), 'The title at the start', 'the whole-file scan finds a title the tail lacks')
 
     // a rename is appended: found once the recheck interval passes, reading only the new bytes
-    fs.appendFileSync(file, '{"type":"custom-title","customTitle":"改名後","sessionId":"x"}\n')
+    fs.appendFileSync(file, '{"type":"custom-title","customTitle":"Renamed","sessionId":"x"}\n')
     now += 30_000
     await board.refreshTitles(live)
-    assert.equal(board.titleOf('x'), '開頭的標題', 'a titled transcript waits for the recheck interval')
+    assert.equal(board.titleOf('x'), 'The title at the start', 'a titled transcript waits for the recheck interval')
     now += 31_000
     await board.refreshTitles(live)
-    assert.equal(board.titleOf('x'), '改名後', 'the appended custom title wins')
+    assert.equal(board.titleOf('x'), 'Renamed', 'the appended custom title wins')
 
     // no title: the first prompt is read from the head, past more than the tail's megabyte; a title, once written, wins
     const untitled = path.join(dir, 'u.jsonl')
-    const typed = '{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":"接著寫第 3 到 5 章\\n先讀這幾個檔案"}}\n'
+    const typed = '{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":"Go on with chapters 3 to 5\\nRead these files first"}}\n'
     fs.writeFileSync(untitled, `{"type":"queue-operation"}\n${typed}${filler}`)
     board.titles.set('u', { path: untitled, size: 0, custom: undefined, ai: undefined, first: undefined, isScanned: false, checkedAt: 0, soughtAt: 0 })
     await board.refreshTitles([{ sessionId: 'u', isClosed: false }])
     assert.equal(board.titleOf('u'), undefined)
-    assert.equal(board.firstPromptOf('u'), '接著寫第 3 到 5 章\n先讀這幾個檔案')
-    assert.equal(board.displayNameOf('u'), '接著寫第 3 到 5 章')
-    fs.appendFileSync(untitled, '{"type":"ai-title","aiTitle":"讀書筆記第 3 到 5 章","sessionId":"u"}\n')
+    assert.equal(board.firstPromptOf('u'), 'Go on with chapters 3 to 5\nRead these files first')
+    assert.equal(board.displayNameOf('u'), 'Go on with chapters 3 to 5')
+    fs.appendFileSync(untitled, '{"type":"ai-title","aiTitle":"Notes, chapters 3 to 5","sessionId":"u"}\n')
     now += 21_000
     await board.refreshTitles([{ sessionId: 'u', isClosed: false }])
     assert.equal(board.firstPromptOf('u'), undefined)
-    assert.equal(board.displayNameOf('u'), '讀書筆記第 3 到 5 章')
+    assert.equal(board.displayNameOf('u'), 'Notes, chapters 3 to 5')
 
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -582,7 +582,7 @@ async function main() {
       board.titles.set(sessionId, { path: 'p', size: 1, custom: undefined, ai: title, isScanned: true, checkedAt: now, soughtAt: now })
 
     let sessions = [make('a', now - 3_000), make('b', now - 2_000), make('c', now - 1_000)]
-    titled('a', '整理讀書筆記')
+    titled('a', 'Tidy up reading notes')
     titled('b', 'Compare add and concat for skip connections in PyTorch')
 
     // nothing focused yet: the session that acted last, and it stays while others act after it
@@ -626,8 +626,8 @@ async function main() {
 
     // opened in a Claude tab here, it is the current one: the tab shows it, whatever its transcript says so far
     const opened = new AgentBoard({ subscriptions: [] })
-    opened.titles.set('e', { path: 'x', size: 1, ai: '在桌面版開始的對話', checkedAt: now, entrypoint: 'claude-desktop' })
-    tabs.activeTabGroup = { activeTab: claudeTab('在桌面版開始的對話') }
+    opened.titles.set('e', { path: 'x', size: 1, ai: 'Begun in the desktop app', checkedAt: now, entrypoint: 'claude-desktop' })
+    tabs.activeTabGroup = { activeTab: claudeTab('Begun in the desktop app') }
     assert.equal(opened.updateFocus([desktop]), true)
     assert.deepEqual(opened.currentSessionId([desktop]), { sessionId: 'e', isFocused: true })
   }
@@ -639,8 +639,8 @@ async function main() {
     const make = sessionId => ({ sessionId, cwd: 'C:/v', updatedAt: now, isClosed: false, activity: { state: 'working', since: now }, agents: [] })
     const read = (sessionId, fields) =>
       board.titles.set(sessionId, { path: 'p', size: 1, custom: undefined, ai: undefined, first: undefined, isScanned: true, checkedAt: now, soughtAt: now, ...fields })
-    const summarize = '/summarize 整理 2030-01-01 的讀書筆記\n\n要改的地方'
-    const next = '接著寫第 3 到 5 章（筆記在 notes/book/）。\n先讀這幾個檔案'
+    const summarize = '/summarize 2030-01-01 reading notes\n\nWhat to change'
+    const next = 'Go on with chapters 3 to 5 (notes in notes/book/).\nRead these files first'
     const sessions = [make('p'), make('q'), make('r')]
     read('p', { first: summarize })
     read('q', { first: next })
@@ -650,7 +650,7 @@ async function main() {
     tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(summarize)) }
     assert.equal(board.updateFocus(sessions), true)
     assert.deepEqual(board.currentSessionId(sessions), { sessionId: 'p', isFocused: true })
-    assert.equal(board.displayNameOf('p'), '/summarize 整理 2030-01-01 的讀書筆記')
+    assert.equal(board.displayNameOf('p'), '/summarize 2030-01-01 reading notes')
 
     // two begun alike cannot be told apart: the focus stays
     tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(next)) }
@@ -658,8 +658,8 @@ async function main() {
     assert.equal(board.currentSessionId(sessions).sessionId, 'p')
 
     // titled, one's tab carries the title, and the prompt's label names only the other
-    read('q', { ai: '讀書筆記第 3 到 5 章', first: next })
-    tabs.activeTabGroup = { activeTab: claudeTab('讀書筆記第 3 到 5 章') }
+    read('q', { ai: 'Notes, chapters 3 to 5', first: next })
+    tabs.activeTabGroup = { activeTab: claudeTab('Notes, chapters 3 to 5') }
     assert.equal(board.updateFocus(sessions), true)
     assert.equal(board.currentSessionId(sessions).sessionId, 'q')
     tabs.activeTabGroup = { activeTab: claudeTab(tabLabelOf(next)) }
@@ -679,7 +679,7 @@ async function main() {
       agents: [],
       usage: { contextPercent: percent, contextTokens: percent * 10_000, contextWindow: 1_000_000, isContextEstimate: true },
     })
-    const sessions = [withContext('a', '整理讀書筆記', 34), withContext('b', '比較兩款開發板', 78)]
+    const sessions = [withContext('a', 'Tidy up reading notes', 34), withContext('b', 'Compare two dev boards', 78)]
     let isShown = false
     board.contextItem.show = () => {
       isShown = true
@@ -690,14 +690,14 @@ async function main() {
 
     board.updateContextItem(sessions, { sessionId: 'b', isFocused: true })
     assert.equal(isShown, true)
-    assert.equal(board.contextItem.text, '$(pie-chart) 上下文 78%')
+    assert.equal(board.contextItem.text, '$(pie-chart) Context 78%')
     assert.equal(board.contextItem.backgroundColor.id, 'statusBarItem.warningBackground')
-    assert.ok(board.contextItem.tooltip.includes('比較兩款開發板：78%（780k / 1M）'), board.contextItem.tooltip)
-    assert.ok(board.contextItem.tooltip.includes('・整理讀書筆記：34%（340k / 1M）'), board.contextItem.tooltip)
+    assert.ok(board.contextItem.tooltip.includes('Compare two dev boards: 78% (780k / 1M)'), board.contextItem.tooltip)
+    assert.ok(board.contextItem.tooltip.includes('· Tidy up reading notes: 34% (340k / 1M)'), board.contextItem.tooltip)
 
     // the other conversation takes the focus: the item follows, and is calm again under 70%
     board.updateContextItem(sessions, { sessionId: 'a', isFocused: true })
-    assert.equal(board.contextItem.text, '$(pie-chart) 上下文 34%')
+    assert.equal(board.contextItem.text, '$(pie-chart) Context 34%')
     assert.equal(board.contextItem.backgroundColor, undefined)
 
     // a session with no measurement yet: nothing to show
@@ -713,7 +713,7 @@ async function main() {
   // reply's usage as it stood; a tool's result in a later user row
   const at = seconds => new Date(Date.UTC(2026, 9, 6, 1, 0, seconds)).toISOString()
   const transcriptRows = [
-    { type: 'user', timestamp: at(0), message: { role: 'user', content: '找出 wiki 裡提到 flow matching 的頁面' } },
+    { type: 'user', timestamp: at(0), message: { role: 'user', content: 'Find the wiki pages that mention flow matching' } },
     { type: 'attachment', timestamp: at(0), attachment: { type: 'hook_success' } },
     { type: 'user', isMeta: true, timestamp: at(0), message: { role: 'user', content: '<system-reminder>…</system-reminder>' } },
     {
@@ -727,7 +727,7 @@ async function main() {
       type: 'assistant',
       timestamp: at(3),
       requestId: 'r1',
-      message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: '先讀概念頁。' }], usage: { input_tokens: 2, output_tokens: 5, cache_creation_input_tokens: 900, cache_read_input_tokens: 0 } },
+      message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'Reading the concept page first.' }], usage: { input_tokens: 2, output_tokens: 5, cache_creation_input_tokens: 900, cache_read_input_tokens: 0 } },
     },
     {
       type: 'assistant',
@@ -752,7 +752,7 @@ async function main() {
         usage: { input_tokens: 3, output_tokens: 12, cache_creation_input_tokens: 0, cache_read_input_tokens: 902 },
       },
     },
-    { type: 'user', timestamp: at(9), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', is_error: true, content: [{ type: 'text', text: '已攔截裸 grep' }] }] } },
+    { type: 'user', timestamp: at(9), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', is_error: true, content: [{ type: 'text', text: 'Blocked a bare grep' }] }] } },
     {
       type: 'assistant',
       timestamp: at(11),
@@ -769,13 +769,13 @@ async function main() {
   {
     // mid-run: the third step has no result yet
     const live = parseAgentTranscript(asText(transcriptRows), DETAIL_LIMITS.sidebar)
-    assert.equal(live.prompt, '找出 wiki 裡提到 flow matching 的頁面', 'the first user row that is not a reminder')
+    assert.equal(live.prompt, 'Find the wiki pages that mention flow matching', 'the first user row that is not a reminder')
     assert.equal(live.model, 'claude-opus-5-5')
     assert.equal(live.toolCount, 3)
     assert.equal(live.errorCount, 1)
     assert.deepEqual(
       live.events.map(event => (event.kind === 'tool' ? `${event.name}:${event.endAt === undefined ? 'open' : event.isError ? 'error' : 'ok'}` : `say:${event.text}`)),
-      ['say:先讀概念頁。', 'Read:ok', 'Bash:error', 'Grep:open'],
+      ['say:Reading the concept page first.', 'Read:ok', 'Bash:error', 'Grep:open'],
     )
     const [, read, bash, grep] = live.events
     assert.equal(read.summary, '…/wiki/concepts/flow-matching.md')
@@ -783,7 +783,7 @@ async function main() {
     assert.equal(read.result, '1 ---\n2 title: Flow matching')
     assert.equal(bash.summary, 'List pages naming it', 'a command step shows its description')
     assert.equal(bash.input, 'grep -rl "flow matching" wiki', 'and its command as the input')
-    assert.equal(bash.result, '已攔截裸 grep')
+    assert.equal(bash.result, 'Blocked a bare grep')
     assert.equal(grep.summary, 'flow matching · …/tester/vault/wiki')
     // usage counted once per request, at its largest: r1's 40 output tokens, not 5 + 5 + 40
     assert.deepEqual(live.usage, { input: 6, output: 61, cacheRead: 1_852, cacheWrite: 900 })
@@ -802,12 +802,12 @@ async function main() {
           type: 'assistant',
           timestamp: at(14),
           requestId: 'r4',
-          message: { role: 'assistant', content: [{ type: 'tool_use', id: 't4', name: 'SubagentHandback', input: { message: '## 結果\n- `wiki/a.md`' } }], usage: { output_tokens: 30 } },
+          message: { role: 'assistant', content: [{ type: 'tool_use', id: 't4', name: 'SubagentHandback', input: { message: '## Result\n- `wiki/a.md`' } }], usage: { output_tokens: 30 } },
         },
       ]),
       DETAIL_LIMITS.sidebar,
     )
-    assert.deepEqual(handback.output, { via: 'handback', text: '## 結果\n- `wiki/a.md`', total: 19 })
+    assert.deepEqual(handback.output, { via: 'handback', text: '## Result\n- `wiki/a.md`', total: 23 })
     assert.equal(handback.toolCount, 3, 'the handback is the report, not a step')
 
     // a workflow agent's structured result
@@ -823,10 +823,10 @@ async function main() {
 
     // ended with words: the last thing it said is the answer
     const worded = parseAgentTranscript(
-      asText([transcriptRows[0], { type: 'assistant', timestamp: at(3), requestId: 'r5', message: { role: 'assistant', content: [{ type: 'text', text: '找到 2 頁。' }] } }]),
+      asText([transcriptRows[0], { type: 'assistant', timestamp: at(3), requestId: 'r5', message: { role: 'assistant', content: [{ type: 'text', text: 'Found 2 pages.' }] } }]),
       DETAIL_LIMITS.sidebar,
     )
-    assert.deepEqual(worded.finalText, { text: '找到 2 頁。', total: '找到 2 頁。'.length })
+    assert.deepEqual(worded.finalText, { text: 'Found 2 pages.', total: 'Found 2 pages.'.length })
 
     // stopped by the limit: the synthetic error row is the failure
     const limited = parseAgentTranscript(
@@ -864,14 +864,14 @@ async function main() {
       runId: 'wf_1',
       workflowName: 'paper-survey',
       status: 'completed',
-      phases: [{ title: '調查', detail: '…' }],
+      phases: [{ title: 'Survey', detail: '…' }],
       workflowProgress: [
-        { type: 'workflow_phase', index: 1, title: '調查' },
-        { type: 'workflow_agent', label: 'collect-sources', phaseTitle: '調查', agentId: 'a06', model: 'claude-opus-5', state: 'error', startedAt: 5 },
+        { type: 'workflow_phase', index: 1, title: 'Survey' },
+        { type: 'workflow_agent', label: 'collect-sources', phaseTitle: 'Survey', agentId: 'a06', model: 'claude-opus-5', state: 'error', startedAt: 5 },
       ],
     })
     assert.equal(run.name, 'paper-survey')
-    assert.deepEqual(run.agents, [{ agentId: 'a06', label: 'collect-sources', phase: '調查', state: 'error', model: 'claude-opus-5', startedAt: 5 }])
+    assert.deepEqual(run.agents, [{ agentId: 'a06', label: 'collect-sources', phase: 'Survey', state: 'error', model: 'claude-opus-5', startedAt: 5 }])
     assert.equal(parseWorkflowRun({ nope: true }), undefined)
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-board-'))
@@ -894,11 +894,11 @@ async function main() {
     fs.mkdirSync(path.join(dir, 'sess', 'subagents'), { recursive: true })
     const file = path.join(dir, 'sess', 'subagents', 'agent-ag1.jsonl')
     fs.writeFileSync(file, asText(transcriptRows.slice(0, 7)))
-    fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ agentType: 'Explore', description: '找 flow matching' }))
+    fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'Find flow matching' }))
 
     const board = new AgentBoard({ subscriptions: [] })
-    board.titles.set('sess', { path: session, size: 0, custom: undefined, ai: '整理讀書筆記', isScanned: true, checkedAt: now, soughtAt: now })
-    const row = { id: 'ag1', label: '找 flow matching', type: 'Explore', isListed: true, status: 'running', startedAt: now - 5_000, lastAt: now, steps: 1, lastAction: 'Read' }
+    board.titles.set('sess', { path: session, size: 0, custom: undefined, ai: 'Tidy up reading notes', isScanned: true, checkedAt: now, soughtAt: now })
+    const row = { id: 'ag1', label: 'Find flow matching', type: 'Explore', isListed: true, status: 'running', startedAt: now - 5_000, lastAt: now, steps: 1, lastAction: 'Read' }
     board.files.set('snap', { mtimeMs: 1, snapshot: { sessionId: 'sess', cwd: 'C:/vault', model: 'claude-opus-5-5', updatedAt: now, isClosed: false, agents: [row] } })
 
     const posted = []
@@ -906,8 +906,8 @@ async function main() {
     await board.refreshDetails()
     assert.equal(posted.length, 1, JSON.stringify(posted.map(data => data.missing)))
     assert.equal(posted[0].key, 'sess:ag1')
-    assert.equal(posted[0].agent.label, '找 flow matching')
-    assert.equal(posted[0].session.name, '整理讀書筆記')
+    assert.equal(posted[0].agent.label, 'Find flow matching')
+    assert.equal(posted[0].session.name, 'Tidy up reading notes')
     assert.equal(posted[0].meta.agentType, 'Explore')
     assert.equal(posted[0].transcript.toolCount, 1)
 
@@ -925,15 +925,15 @@ async function main() {
       file,
       asText([
         { type: 'user', timestamp: at(12), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't3', content: 'a.md' }] } },
-        { type: 'assistant', timestamp: at(13), requestId: 'r6', message: { role: 'assistant', content: [{ type: 'text', text: '找到 1 頁。' }] } },
+        { type: 'assistant', timestamp: at(13), requestId: 'r6', message: { role: 'assistant', content: [{ type: 'text', text: 'Found 1 page.' }] } },
       ]),
     )
     board.files.get('snap').snapshot.agents = [{ ...row, status: 'done', endedAt: now }]
     await board.refreshDetails()
     const last = posted[posted.length - 1]
     assert.equal(last.status, 'done')
-    assert.deepEqual(last.transcript.output, { via: 'text', text: '找到 1 頁。', total: '找到 1 頁。'.length })
-    assert.ok(!last.transcript.events.some(event => event.kind === 'text' && event.text === '找到 1 頁。'))
+    assert.deepEqual(last.transcript.output, { via: 'text', text: 'Found 1 page.', total: 'Found 1 page.'.length })
+    assert.ok(!last.transcript.events.some(event => event.kind === 'text' && event.text === 'Found 1 page.'))
 
     // a page that just loaded asks again: it gets the detail though nothing changed
     const before = posted.length
@@ -947,7 +947,7 @@ async function main() {
       path.join(dir, 'sess', 'subagents', 'workflows', 'wf_9', 'agent-wfa.jsonl'),
       asText([{ type: 'user', timestamp: at(0), message: { role: 'user', content: '## Survey recent papers on diffusion policies for manipulation\n\nCite each claim.' } }]),
     )
-    const unnamed = { id: 'wfa', label: '未具名代理 wfa', type: '其他（workflow 等）', isListed: false, status: 'running', startedAt: now, lastAt: now, steps: 2, lastAction: 'WebSearch' }
+    const unnamed = { id: 'wfa', label: 'Unnamed agent wfa', type: 'other (workflow…)', isListed: false, status: 'running', startedAt: now, lastAt: now, steps: 2, lastAction: 'WebSearch' }
     board.files.get('snap').snapshot.agents = [row, unnamed]
     await board.nameUnnamed(board.sessions())
     let shown = board.withWorkflow('sess', unnamed)

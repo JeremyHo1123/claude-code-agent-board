@@ -6,14 +6,11 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.8.0" src="https://img.shields.io/badge/version-0.8.0-2a78d6">
+  <img alt="version 0.9.0" src="https://img.shields.io/badge/version-0.9.0-2a78d6">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-199e70">
   <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/Claude%20Code-2.1.289%2B-d97757">
   <img alt="VS Code 1.90 or later" src="https://img.shields.io/badge/VS%20Code-1.90%2B-007acc">
-  <img alt="Interface in Traditional Chinese" src="https://img.shields.io/badge/UI-%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-8a8a8a">
 </p>
-
-<p align="center"><b>English</b> · <a href="README.zh-TW.md">繁體中文</a></p>
 
 <table>
   <tr>
@@ -45,7 +42,7 @@ Agent Board gets around this by splitting the job in two:
 
 ## What you get
 
-**A live board of subagents.** One card per running subagent: its state, type, step count, the tool call it is on, and the time it has run. Ended subagents keep a row with their token breakdown. A subagent with no tool call for two minutes is flagged as quiet, and one whose session stopped reporting as possibly lost.
+**A live board of subagents.** One card per running subagent: its state, type, step count, the tool call it is on, and the time it has run. Ended subagents keep a row with their token breakdown. A subagent with no tool call for two minutes is flagged as quiet, and one whose session stopped reporting as possibly cut off.
 
 **Task details, like the built-in agent card.** Click a card or row to open that subagent's detail:
 
@@ -55,19 +52,19 @@ Agent Board gets around this by splitting the job in two:
 - its final report, rendered as Markdown (tables, lists, code)
 - tokens, counted once per request
 
-**在編輯區開啟** opens the same detail wide in an editor tab. A workflow's agents show their real labels and phases.
+**Open in editor** opens the same detail wide in an editor tab. A workflow's agents show their real labels and phases.
 
 <p align="center"><img src="docs/images/panel.png" width="92%" alt="A subagent's detail opened wide in an editor tab, with one step expanded"></p>
 
-**A "needs you" section.** Conversations waiting for a permission or an answer, subagents gone quiet, and recent failures are grouped at the top. The status bar turns to "在等你" while a conversation waits.
+**A "needs you" section.** Conversations waiting for a permission or an answer, subagents gone quiet, and recent failures are grouped at the top. The status bar says which conversation is waiting while one waits.
 
-**Subscription usage that keeps up.** The 5-hour and weekly windows of your Claude plan, with per-model buckets and extra usage when you have them. Resets are worded as claude.ai's usage page words them. The status bar always shows `5h % · 週 %`. Two accounts on one machine (VS Code signed in to one, the desktop app to another) are never mixed: the board shows the account VS Code and the terminal use, and leaves out one that only the desktop app is signed in to. `agentBoard.usageOfDesktopApp` shows that one too, each account with its own meters headed by its sign-in's email.
+**Subscription usage that keeps up.** The 5-hour and weekly windows of your Claude plan, with per-model buckets and extra usage when you have them. Resets are worded as claude.ai's usage page words them. The status bar always shows `5h % · wk %`. Two accounts on one machine (VS Code signed in to one, the desktop app to another) are never mixed: the board shows the account VS Code and the terminal use, and leaves out one that only the desktop app is signed in to. `agentBoard.usageOfDesktopApp` shows that one too, each account with its own meters headed by its sign-in's email.
 
 **The right conversation's context.** Each conversation's context fill, computed the way `/context` computes it. The meter follows the Claude tab you are looking at, and the status bar shows it too.
 
-**A context bar above the prompt, in the terminal and the desktop app.** There the mod draws the conversation's context fill in the band directly above the prompt, as `上下文 ███░░░░░░░ 16% · 157k / 1.0M`. The bar is green, yellow from 70% and red from 90%, and steps aside while a survey holds the band. VS Code's Claude panel draws no such band, so there the fill stays in the status bar.
+**A context bar above the prompt, in the terminal and the desktop app.** There the mod draws the conversation's context fill in the band directly above the prompt, as `Context ███░░░░░░░ 16% · 157k / 1.0M`. The bar is green, yellow from 70% and red from 90%, and steps aside while a survey holds the band. VS Code's Claude panel draws no such band, so there the fill stays in the status bar.
 
-**Your prompts, as chapters.** 我的提問 lists every prompt you typed in the conversation in view. Click one and the board shows that conversation's Claude tab, opens VS Code's find there and searches for the prompt, so the panel lands on it (Enter goes to the next match). The start of the prompt is left on the clipboard. The list is closed until you open it.
+**Your prompts, as chapters.** My prompts lists every prompt you typed in the conversation in view. Click one and the board shows that conversation's Claude tab, opens VS Code's find there and searches for the prompt, so the panel lands on it (Enter goes to the next match). The start of the prompt is left on the clipboard. The list is closed until you open it.
 
 **Notifications** when a conversation has waited 15 seconds, a subagent ends or fails, a long turn finishes, or usage crosses 80% or 90%. Each kind has its own switch.
 
@@ -164,8 +161,8 @@ code --install-extension "$env:USERPROFILE\.claude\mods\agent-board\dist\agent-b
 | `claude plugin validate ~/.claude/mods/agent-board` | ends with `Validation passed` |
 | Type `/agent-board` in a Claude Code conversation | it answers with the subagent board |
 | List `~/.claude/agent-board/sessions/` | one `<sessionId>.json` per open conversation, modified within the last minute |
-| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.8.0` |
-| Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · 週 …%` and `上下文 …%` in the status bar once a conversation has had one reply |
+| `code --list-extensions --show-versions` | lists `jeremy-local.agent-board@0.9.0` |
+| Look at VS Code | an **Agent Board** icon in the activity bar; `5h …% · wk …%` and `Context …%` in the status bar once a conversation has had one reply |
 
 ### Update
 
@@ -186,18 +183,19 @@ Remove the folder from `CLAUDE_CODE_PLUGIN_DIRS`, then delete `~/.claude/mods/ag
 
 ## Reading the board
 
-The interface is in Traditional Chinese. These are the labels you will meet:
+The board's parts, from the top:
 
-| On screen | Meaning |
+| On screen | What it holds |
 |---|---|
-| 訂閱用量 | Subscription usage: the 5-hour window (5 小時工作階段) and the weekly windows (每週) |
-| 目前對話 · 上下文 | The current conversation and its context fill |
-| 需要你 | Needs you: conversations waiting, subagents gone quiet, recent failures |
-| 對話 | Conversations, listed when more than one is open; 目前 marks the one the context meter shows |
-| 執行中 / 已結束 | Running / ended subagents |
-| 等你 · 完成 · 失敗 · 已中止 | Waiting for you · done · failed · stopped |
-| 任務指示 · 過程 · 回報 | In a detail: the task it was given · its steps · its report |
-| 在編輯區開啟 · 返回 · 複製 | Open in an editor tab · back · copy the report |
+| Subscription usage | The 5-hour session and the weekly windows, with when each resets |
+| Current conversation · Context | The conversation in view and its context fill (Latest conversation until a Claude tab is matched) |
+| My prompts | The prompts you typed in that conversation, closed until you open it |
+| Needs you | Conversations waiting for you, subagents gone quiet, recent failures |
+| Conversations | Listed when more than one is open; current marks the one the context meter shows |
+| Running / Ended | Running and ended subagents |
+| waiting · running · done · failed · stopped | The counts at the top |
+| Task · Steps · Report | In a detail: the task it was given, its steps, its report |
+| Open in editor · Back · Copy | In a detail: open it wide in an editor tab, go back to the board, copy the report |
 
 ## Settings
 
@@ -206,7 +204,7 @@ All of them live under `agentBoard.*` in VS Code's settings.
 | Setting | Default | What it does |
 |---|---|---|
 | `agentBoard.autoReveal` | `true` | Shows the board when two or more subagents run at once, without taking the keyboard |
-| `agentBoard.usageInStatusBar` | `true` | Keeps `5h % · 週 %` in the status bar; it turns yellow from 70% and red from 90% |
+| `agentBoard.usageInStatusBar` | `true` | Keeps `5h % · wk %` in the status bar; it turns yellow from 70% and red from 90% |
 | `agentBoard.usageOfDesktopApp` | `false` | Also shows the usage of an account that only the Claude desktop app is signed in to |
 | `agentBoard.contextInStatusBar` | `true` | Keeps the current conversation's context fill in the status bar |
 | `agentBoard.notify.waiting` | `true` | Notifies when a conversation has waited 15 seconds for an answer or a permission |
@@ -217,7 +215,7 @@ All of them live under `agentBoard.*` in VS Code's settings.
 
 In a terminal session the mod also answers `/agent-board` with a pane of that session's subagents.
 
-Its answer ends with three `[上下文橫條]` lines for when the bar above the prompt does not show: the surfaces attached to the session, how many times one asked for the bar (and which), and the figures the bar would draw.
+Its answer ends with three `[context bar]` lines for when the bar above the prompt does not show: the surfaces attached to the session, how many times one asked for the bar (and which), and the figures the bar would draw.
 
 ## What it reads and what it sends
 
@@ -237,18 +235,18 @@ Its answer ends with three `[上下文橫條]` lines for when the bar above the 
 - **Conversations are matched by title.** Two conversations with the same title cannot be told apart, and a brand-new untitled one is matched only when it is the only one.
 - **The usage endpoint is not a public API.** Its shape may change. If it does, the board falls back to the readings API replies carry.
 - **Long content is clipped in the sidebar** (1,500 characters per step result, 20,000 per report). The editor tab shows far more. A transcript over 8 MB is read in part.
-- **Traditional Chinese only.** The strings are in `hooks/format.ts`, `hooks/register.tsx`, `vscode-extension/extension.js` and `vscode-extension/media/*.js`.
+- **English only.** The strings are in `hooks/format.ts`, `hooks/register.tsx`, `vscode-extension/extension.js` and `vscode-extension/media/*.js`.
 
 ## Troubleshooting
 
 | What you see | What it means | What to do |
 |---|---|---|
-| 還沒收到資料 on the board | No snapshot yet: the mod is not loaded | Check `CLAUDE_CODE_PLUGIN_DIRS`, reload the window, type `/agent-board` |
+| No data yet on the board | No snapshot yet: the mod is not loaded | Check `CLAUDE_CODE_PLUGIN_DIRS`, reload the window, type `/agent-board` |
 | `/agent-board` is unknown | Mods are not available in this session | Update Claude Code; run `claude plugin validate` on the folder and read what it says |
-| ⚠ 用量查詢被限流 | The usage endpoint refused (HTTP 429) | Nothing: it retries by itself, and replies keep the 5-hour and weekly figures moving |
+| ⚠ Usage read rate-limited | The usage endpoint refused (HTTP 429) | Nothing: it retries by itself, and replies keep the 5-hour and weekly figures moving |
 | The context meter shows another conversation | No Claude tab matched yet | Click the Claude tab you mean |
 | A detail says the transcript is not found | A subagent's transcript appears after its first reply | Wait a moment; old sessions whose files were cleared stay missing |
-| A subagent called 未具名代理 | A workflow agent whose transcript is not written yet | It takes its task's first line within a second or two |
+| A subagent called Unnamed agent | A workflow agent whose transcript is not written yet | It takes its task's first line within a second or two |
 
 ## Development
 

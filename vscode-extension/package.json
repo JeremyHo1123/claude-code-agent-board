@@ -2,7 +2,7 @@
   "name": "agent-board",
   "displayName": "Agent Board",
   "description": "A live board for Claude Code inside VS Code: every conversation's subagents and their task details, subscription usage, and context fill, fed by the agent-board mod",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "jeremy-local",
   "license": "MIT",
   "homepage": "https://github.com/JeremyHo1123/claude-code-agent-board#readme",
@@ -42,14 +42,14 @@
         {
           "type": "webview",
           "id": "agentBoard.view",
-          "name": "子代理"
+          "name": "Subagents"
         }
       ]
     },
     "commands": [
       {
         "command": "agentBoard.open",
-        "title": "打開子代理面板",
+        "title": "Open Subagent Board",
         "category": "Agent Board"
       }
     ],
@@ -59,47 +59,47 @@
         "agentBoard.autoReveal": {
           "type": "boolean",
           "default": true,
-          "description": "同時有 2 個以上子代理在執行時，自動顯示面板（不會搶走輸入焦點）。"
+          "description": "Show the board by itself while 2 or more subagents run at once (it does not take the input focus)."
         },
         "agentBoard.usageInStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "在狀態列右側常駐顯示訂閱用量（5 小時工作階段與每週額度）；接近上限時變色。"
+          "description": "Keep the subscription usage (the 5-hour session and the weekly limit) on the right of the status bar; it changes color near the limit."
         },
         "agentBoard.usageOfDesktopApp": {
           "type": "boolean",
           "default": false,
-          "description": "也顯示「只有 Claude 桌面版在用」的帳號的訂閱用量。預設關閉：桌面版登入另一個帳號時，面板只顯示 VS Code 這邊的帳號。"
+          "description": "Also show the usage of an account only the Claude desktop app uses. Off by default: with the desktop app signed in to another account, the board shows only the account VS Code uses."
         },
         "agentBoard.contextInStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "在狀態列右側顯示「目前對話」的上下文用量；會跟著你點開的 Claude 分頁切換，接近上限時變色。"
+          "description": "Show the current conversation's context fill on the right of the status bar; it follows the Claude tab you open and changes color near the limit."
         },
         "agentBoard.notify.waiting": {
           "type": "boolean",
           "default": true,
-          "description": "某個 Claude 對話在等你回答問題或允許權限超過 15 秒時通知。"
+          "description": "Notify when a Claude conversation has waited over 15 seconds for your answer or your permission."
         },
         "agentBoard.notify.subagents": {
           "type": "boolean",
           "default": true,
-          "description": "子代理完成或失敗時通知（一次 3 個以上合併成一則）。"
+          "description": "Notify when a subagent finishes or fails (3 or more at once fold into one notification)."
         },
         "agentBoard.notify.turnDone": {
           "type": "boolean",
           "default": true,
-          "description": "某個對話工作超過 2 分鐘、這一輪做完時通知。"
+          "description": "Notify when a conversation finishes a turn it worked on for over 2 minutes."
         },
         "agentBoard.notify.usage": {
           "type": "boolean",
           "default": true,
-          "description": "5 小時或每週額度剛跨過 80% 或 90% 時通知。"
+          "description": "Notify when the 5-hour or weekly limit crosses 80% or 90%."
         },
         "agentBoard.dataDirectory": {
           "type": "string",
           "default": "",
-          "description": "agent-board mod 寫入快照的資料夾；留空表示 ~/.claude/agent-board/sessions。"
+          "description": "The folder the agent-board mod writes its snapshots to; empty means ~/.claude/agent-board/sessions."
         }
       }
     }

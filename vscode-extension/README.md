@@ -10,9 +10,7 @@ VS Code's Claude Code extension draws no mod pane, so the data comes from the **
 Setup, screenshots and how it works:
 <https://github.com/JeremyHo1123/claude-code-agent-board>
 
-- Open it from the Agent Board icon in the activity bar, or run **Agent Board: 打開子代理面板**.
-- Click a subagent's card or row for its task detail; **在編輯區開啟** opens it wide in an editor tab.
-- The status bar shows subscription usage (`5h % · 週 %`) and the current conversation's context.
+- Open it from the Agent Board icon in the activity bar, or run **Agent Board: Open Subagent Board**.
+- Click a subagent's card or row for its task detail; **Open in editor** opens it wide in an editor tab.
+- The status bar shows subscription usage (`5h % · wk %`) and the current conversation's context.
 - Settings live under `agentBoard.*`.
-
-The interface is in Traditional Chinese.

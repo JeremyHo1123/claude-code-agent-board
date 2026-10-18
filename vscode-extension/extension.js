@@ -44,7 +44,7 @@ function isSnapshot(value) {
   )
 }
 
-const LIMIT_LABEL = { five_hour: '5 小時工作階段', seven_day: '每週・所有模型', spend_limit: '花費上限' }
+const LIMIT_LABEL = { five_hour: '5-hour session', seven_day: 'Weekly · all models', spend_limit: 'Spend limit' }
 const WINDOW_ORDER = ['five_hour', 'seven_day']
 /** A titled transcript is re-read this seldom (a rename shows by then); an untitled one sooner, as its title comes after the first turn. */
 const TITLE_RECHECK_MS = 60_000
@@ -309,10 +309,10 @@ function mergeUsage(sessions, shared, currentSessionId, isDesktopShown = false) 
 
 /** What an account is called where two are shown: its sign-in's email, else that it is not known. */
 function accountName(account) {
-  return account.label || (account.id === '' ? '未辨識的帳號' : `帳號 ${account.id.slice(0, 6)}`)
+  return account.label || (account.id === '' ? 'Unidentified account' : `Account ${account.id.slice(0, 6)}`)
 }
 
-const SOURCE_LABEL = { plan: '查詢', response: '回應' }
+const SOURCE_LABEL = { plan: 'usage read', response: 'reply' }
 
 /** Why the shared claude.ai read is behind, and when it is tried again; undefined while it works. */
 function planProblem(usage, now) {
@@ -322,13 +322,13 @@ function planProblem(usage, now) {
   }
   const what =
     error.status === 429
-      ? '被限流（HTTP 429）'
+      ? 'rate-limited (HTTP 429)'
       : error.status
-        ? `失敗（HTTP ${error.status}）`
-        : `失敗：${error.message || '原因不明'}`
-  const retry = usage.planNextAt !== undefined && usage.planNextAt > now ? `，${inText(usage.planNextAt - now)}再試` : ''
+        ? `failed (HTTP ${error.status})`
+        : `failed: ${error.message || 'cause unknown'}`
+  const retry = usage.planNextAt !== undefined && usage.planNextAt > now ? `, retrying ${inText(usage.planNextAt - now)}` : ''
 
-  return `claude.ai 用量查詢${what}${retry}`
+  return `claude.ai usage read ${what}${retry}`
 }
 
 /** A session's context window as the mod measured it: /context's own estimate where it had one. */
@@ -666,7 +666,7 @@ function contentText(content) {
   }
 
   return content
-    .map(block => (block && block.type === 'text' ? block.text : block && block.type === 'image' ? '［圖片］' : ''))
+    .map(block => (block && block.type === 'text' ? block.text : block && block.type === 'image' ? '[image]' : ''))
     .filter(Boolean)
     .join('\n')
 }
@@ -809,7 +809,7 @@ function parseAgentTranscript(text, limits) {
       continue
     }
     if (row.isApiErrorMessage) {
-      failure = contentText(message.content) || String(row.error || 'API 錯誤')
+      failure = contentText(message.content) || String(row.error || 'API error')
       continue
     }
     // a later reply means it got past the failure
@@ -925,11 +925,11 @@ function parseWorkflowRun(json) {
   }
 }
 
-const WEEKDAY = ['週日', '週一', '週二', '週三', '週四', '週五', '週六']
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /**
- * When a window resets, worded as claude.ai's usage page words it ("Resets Tue 4:00 AM"), then how
- * long that is from now: "週二 04:00 重置（4 小時 51 分後）".
+ * When a window resets, worded as claude.ai's usage page words it ("Resets Tue 4:00 AM", on a
+ * 24-hour clock like the rest of the board), then how long that is from now: "Resets Tue 04:00 (in 4h 51m)".
  */
 function resetText(iso, now) {
   const at = Date.parse(iso)
@@ -943,29 +943,29 @@ function resetText(iso, now) {
   const hours = Math.floor(minutes / 60)
   const until =
     minutes <= 0
-      ? '時間已到'
+      ? 'due now'
       : minutes < 60
-        ? `${minutes} 分後`
+        ? `in ${minutes} min`
         : hours < 24
-          ? `${hours} 小時 ${minutes % 60} 分後`
-          : `${Math.floor(hours / 24)} 天 ${hours % 24} 小時後`
+          ? `in ${hours}h ${minutes % 60}m`
+          : `in ${Math.floor(hours / 24)}d ${hours % 24}h`
 
-  return `${WEEKDAY[date.getDay()]} ${pad(date.getHours())}:${pad(date.getMinutes())} 重置（${until}）`
+  return `Resets ${WEEKDAY[date.getDay()]} ${pad(date.getHours())}:${pad(date.getMinutes())} (${until})`
 }
 
 function agoText(ms) {
   const seconds = Math.max(0, Math.round(ms / 1000))
   if (seconds < 5) {
-    return '剛剛'
+    return 'just now'
   }
 
-  return seconds < 60 ? `${seconds} 秒前` : seconds < 3600 ? `${Math.floor(seconds / 60)} 分鐘前` : `${Math.floor(seconds / 3600)} 小時前`
+  return seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)} min ago` : `${Math.floor(seconds / 3600)}h ago`
 }
 
 function inText(ms) {
   const seconds = Math.max(1, Math.ceil(ms / 1000))
 
-  return seconds < 60 ? `${seconds} 秒後` : seconds < 3600 ? `${Math.ceil(seconds / 60)} 分鐘後` : `${Math.ceil(seconds / 3600)} 小時後`
+  return seconds < 60 ? `in ${seconds}s` : seconds < 3600 ? `in ${Math.ceil(seconds / 60)} min` : `in ${Math.ceil(seconds / 3600)}h`
 }
 
 /** A snapshot younger than this is a live session: the mod writes a heartbeat every minute. */
@@ -983,7 +983,7 @@ function projectOf(cwd) {
     .split(/[\\/]+/)
     .filter(Boolean)
 
-  return parts[parts.length - 1] || '對話'
+  return parts[parts.length - 1] || 'conversation'
 }
 
 /** What a session is called in notifications and the status bar: its title, else its project folder. */
@@ -998,10 +998,15 @@ function formatElapsed(ms) {
   const minutes = Math.floor(seconds / 60)
 
   return minutes >= 60
-    ? `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分`
+    ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
     : minutes > 0
-      ? `${minutes} 分 ${seconds % 60} 秒`
-      : `${seconds} 秒`
+      ? `${minutes}m ${seconds % 60}s`
+      : `${seconds}s`
+}
+
+/** "1 subagent running", "3 subagents running". */
+function runningText(count) {
+  return `${count} subagent${count === 1 ? '' : 's'} running`
 }
 
 const isLive = (session, now) => !session.isClosed && now - session.updatedAt < LIVE_MS
@@ -1052,12 +1057,12 @@ class AgentBoard {
     this.status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
     this.status.command = 'agentBoard.open'
     this.usageItem = vscode.window.createStatusBarItem('agentBoard.usage', vscode.StatusBarAlignment.Right, 100)
-    this.usageItem.name = 'Agent Board：訂閱用量'
+    this.usageItem.name = 'Agent Board: subscription usage'
     this.usageItem.command = 'agentBoard.open'
     // The current conversation's context, just left of the usage: the nearest place to the Claude
     // tab's prompt this extension can draw in (that tab's own webview takes nothing from outside).
     this.contextItem = vscode.window.createStatusBarItem('agentBoard.context', vscode.StatusBarAlignment.Right, 101)
-    this.contextItem.name = 'Agent Board：目前對話的上下文'
+    this.contextItem.name = "Agent Board: the current conversation's context"
     this.contextItem.command = 'agentBoard.open'
     context.subscriptions.push(this.status, this.usageItem, this.contextItem)
   }
@@ -1357,7 +1362,7 @@ class AgentBoard {
         agent ||
         (info && { id: watch.agentId, label: info.label, type: 'workflow', status, startedAt: info.startedAt }) || {
           id: watch.agentId,
-          label: (watch.meta && watch.meta.description) || `子代理 ${watch.agentId.slice(0, 7)}`,
+          label: (watch.meta && watch.meta.description) || `Subagent ${watch.agentId.slice(0, 7)}`,
           type: watch.meta && watch.meta.agentType,
           status,
         },
@@ -1379,7 +1384,7 @@ class AgentBoard {
       return
     }
     const media = vscode.Uri.joinPath(this.context.extensionUri, 'media')
-    const panel = vscode.window.createWebviewPanel('agentBoard.agent', `子代理：${label || agentId.slice(0, 7)}`, vscode.ViewColumn.Active, {
+    const panel = vscode.window.createWebviewPanel('agentBoard.agent', `Subagent: ${label || agentId.slice(0, 7)}`, vscode.ViewColumn.Active, {
       enableScripts: true,
       localResourceRoots: [media],
       retainContextWhenHidden: true,
@@ -1409,7 +1414,7 @@ class AgentBoard {
       void panel.webview.postMessage({ type: 'detail', data })
       // the tab's title follows a label that arrives late (a workflow's, from its run file)
       if (data.agent && data.agent.label) {
-        panel.title = `子代理：${data.agent.label}`
+        panel.title = `Subagent: ${data.agent.label}`
       }
     })
   }
@@ -1419,7 +1424,7 @@ class AgentBoard {
       return
     }
     void Promise.resolve(vscode.env.clipboard.writeText(text)).then(() =>
-      vscode.window.setStatusBarMessage('$(check) 已複製子代理的回報', 2_500),
+      vscode.window.setStatusBarMessage("$(check) Copied the subagent's report", 2_500),
     )
   }
 
@@ -1433,7 +1438,7 @@ class AgentBoard {
       .join('\n')
 
     return `<!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
@@ -1654,7 +1659,7 @@ ${tags}
     await vscode.env.clipboard.writeText(needle)
     const found = this.claudeTabOf(sessionId)
     if (found === undefined) {
-      vscode.window.setStatusBarMessage('$(search) 找不到這個對話的 Claude 分頁；提問的開頭已複製，在 Claude 面板按 Ctrl+F 貼上', 6_000)
+      vscode.window.setStatusBarMessage("$(search) No Claude tab found for this conversation; the prompt's start is copied: press Ctrl+F in the Claude panel and paste", 6_000)
 
       return
     }
@@ -1670,9 +1675,9 @@ ${tags}
       // the find box takes focus a moment after it shows
       await new Promise(resolve => setTimeout(resolve, 200))
       await vscode.commands.executeCommand('editor.action.clipboardPasteAction')
-      vscode.window.setStatusBarMessage('$(search) 已搜尋這句提問：Enter 跳下一個相符處，Esc 關閉；沒有跳的話按 Ctrl+V', 6_000)
+      vscode.window.setStatusBarMessage('$(search) Searched for the prompt: Enter for the next match, Esc to close; if nothing moved, press Ctrl+V', 6_000)
     } catch {
-      vscode.window.setStatusBarMessage('$(search) 提問的開頭已複製：在 Claude 面板按 Ctrl+F 貼上', 6_000)
+      vscode.window.setStatusBarMessage("$(search) The prompt's start is copied: press Ctrl+F in the Claude panel and paste", 6_000)
     }
   }
 
@@ -1824,7 +1829,7 @@ ${tags}
   }
 
   toast(kind, text) {
-    const action = '打開面板'
+    const action = 'Open the board'
     const shown =
       kind === 'error'
         ? vscode.window.showErrorMessage(text, action)
@@ -1873,7 +1878,7 @@ ${tags}
       }
       this.waitNotified.add(id)
       if (!isFirst && config.get('notify.waiting', true)) {
-        this.toast('warning', `「${item.project}」的 Claude 在等你：${item.reason || '等你回覆'}`)
+        this.toast('warning', `Claude in "${item.project}" is waiting for you: ${item.reason || 'waiting for your reply'}`)
       }
     }
     for (const id of [...this.waitNotified]) {
@@ -1909,20 +1914,20 @@ ${tags}
         item.since - previous.since >= LONG_TURN_MS &&
         config.get('notify.turnDone', true)
       ) {
-        this.toast('info', `「${item.project}」這一輪做完了（工作了 ${formatElapsed(item.since - previous.since)}）`)
+        this.toast('info', `"${item.project}" finished its turn (worked ${formatElapsed(item.since - previous.since)})`)
       }
     }
 
     if (config.get('notify.subagents', true)) {
       if (finished.length >= BATCH_AT) {
-        this.toast('info', `✓ ${finished.length} 個子代理完成`)
+        this.toast('info', `✓ ${finished.length} subagents done`)
       } else {
         for (const item of finished) {
-          this.toast('info', `✓ 子代理完成：${item.label}（${formatElapsed((item.endedAt || now) - item.startedAt)}）`)
+          this.toast('info', `✓ Subagent done: ${item.label} (${formatElapsed((item.endedAt || now) - item.startedAt)})`)
         }
       }
       for (const item of failed) {
-        this.toast('error', `✕ 子代理失敗：${item.label}`)
+        this.toast('error', `✕ Subagent failed: ${item.label}`)
       }
     }
   }
@@ -1950,9 +1955,9 @@ ${tags}
           continue
         }
         if (vscode.workspace.getConfiguration('agentBoard').get('notify.usage', true)) {
-          const reset = window.resetsAt ? `，${resetText(window.resetsAt, Date.now())}` : ''
-          const whose = accounts.length > 1 ? `【${accountName(account)}】` : ''
-          this.toast(level >= 90 ? 'error' : 'warning', `${whose}${window.label}已用 ${Math.round(window.percent)}%${reset}`)
+          const reset = window.resetsAt ? `, ${resetText(window.resetsAt, Date.now())}` : ''
+          const whose = accounts.length > 1 ? `[${accountName(account)}] ` : ''
+          this.toast(level >= 90 ? 'error' : 'warning', `${whose}${window.label}: ${Math.round(window.percent)}% used${reset}`)
         }
       }
     }
@@ -1965,16 +1970,16 @@ ${tags}
     )
     if (waiting.length > 0) {
       this.status.text =
-        waiting.length === 1 ? `$(bell) 「${nameOf(waiting[0], 16)}」在等你` : `$(bell) ${waiting.length} 個對話在等你`
+        waiting.length === 1 ? `$(bell) "${nameOf(waiting[0], 16)}" is waiting` : `$(bell) ${waiting.length} conversations waiting`
       this.status.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground')
       this.status.tooltip = [
         ...waiting.map(
           session =>
-            `⏸ ${nameOf(session)}：${session.activity.reason || '等你回覆'}（已等 ${formatElapsed(now - session.activity.since)}）`,
+            `⏸ ${nameOf(session)}: ${session.activity.reason || 'waiting for your reply'} (waiting ${formatElapsed(now - session.activity.since)})`,
         ),
-        ...(running > 0 ? ['', `${running} 個子代理執行中`] : []),
+        ...(running > 0 ? ['', `${runningText(running)}`] : []),
         '',
-        '按一下打開 Agent Board',
+        'Click to open Agent Board',
       ].join('\n')
       this.status.show()
 
@@ -1991,8 +1996,8 @@ ${tags}
       .flatMap(session => (session.isClosed ? [] : session.agents))
       .filter(agent => agent.status === 'running')
       .map(agent => `● ${agent.label}`)
-    this.status.text = `$(sync~spin) ${running} 個子代理執行中`
-    this.status.tooltip = `${names.join('\n')}\n\n按一下打開 Agent Board`
+    this.status.text = `$(sync~spin) ${runningText(running)}`
+    this.status.tooltip = `${names.join('\n')}\n\nClick to open Agent Board`
     this.status.show()
   }
 
@@ -2007,7 +2012,7 @@ ${tags}
       return
     }
 
-    // one group per account, in the board's order: "5h 62% · 週 18%", two accounts parted by a bar
+    // one group per account, in the board's order: "5h 62% · wk 18%", two accounts parted by a bar
     const shown = (this.usage.accounts || [])
       .map(account => ({
         account,
@@ -2022,14 +2027,14 @@ ${tags}
     }
 
     const textOf = ({ five, week }) =>
-      [five === undefined ? undefined : `5h ${Math.round(five.percent)}%`, week === undefined ? undefined : `週 ${Math.round(week.percent)}%`]
+      [five === undefined ? undefined : `5h ${Math.round(five.percent)}%`, week === undefined ? undefined : `wk ${Math.round(week.percent)}%`]
         .filter(Boolean)
         .join(' · ')
     const peak = Math.max(
       ...shown.flatMap(({ five, week }) => [five, week].filter(window => window !== undefined).map(window => window.percent)),
     )
 
-    this.usageItem.text = `$(pulse) ${shown.map(textOf).join(' ｜ ')}`
+    this.usageItem.text = `$(pulse) ${shown.map(textOf).join(' | ')}`
     this.usageItem.backgroundColor =
       peak >= 90
         ? new vscode.ThemeColor('statusBarItem.errorBackground')
@@ -2038,20 +2043,20 @@ ${tags}
           : undefined
     const now = Date.now()
     const isMany = shown.length > 1
-    const lines = [isMany ? `訂閱用量（${shown.length} 個帳號，狀態列由左到右）` : '訂閱用量']
+    const lines = [isMany ? `Subscription usage (${shown.length} accounts, left to right in the status bar)` : 'Subscription usage']
     for (const { account } of shown) {
       if (isMany) {
-        lines.push('', `▸ ${accountName(account)}${account.isCurrent ? '（目前對話的帳號）' : ''}`)
+        lines.push('', `▸ ${accountName(account)}${account.isCurrent ? " (the current conversation's account)" : ''}`)
         if (account.sessions.length > 0) {
-          lines.push(`對話：${account.sessions.join('、')}`)
+          lines.push(`Conversations: ${account.sessions.join(', ')}`)
         }
       }
       lines.push(
         ...account.list.map(
           window =>
-            `${window.label}：${Math.round(window.percent)}%` +
-            `${window.resetsAt ? `，${resetText(window.resetsAt, now)}` : ''}` +
-            `（${SOURCE_LABEL[window.source] || window.source}・${agoText(now - window.at)}）`,
+            `${window.label}: ${Math.round(window.percent)}%` +
+            `${window.resetsAt ? `, ${resetText(window.resetsAt, now)}` : ''}` +
+            ` (${SOURCE_LABEL[window.source] || window.source} · ${agoText(now - window.at)})`,
         ),
       )
       const problem = planProblem(account, now)
@@ -2061,11 +2066,11 @@ ${tags}
     }
     lines.push(
       '',
-      '每一項取兩個來源裡較高的讀數（同一段期間內用量只會增加）：',
-      '「查詢」＝所有分頁共用，每 30 秒向 claude.ai 問一次，數字最準',
-      '「回應」＝Claude 每次回覆時附帶的額度，不含那一次回覆本身，會略低',
+      'Each figure is the higher reading of two sources (use within a window only grows):',
+      '"usage read" = asked of claude.ai every 30 seconds, shared by every tab; the most exact',
+      '"reply" = the figure Claude sends with each reply; it leaves out that reply itself, so it runs a little low',
       '',
-      '按一下打開 Agent Board',
+      'Click to open Agent Board',
     )
     this.usageItem.tooltip = lines.join('\n')
     this.usageItem.show()
@@ -2085,7 +2090,7 @@ ${tags}
     }
 
     const describe = (candidate, measured) =>
-      `${nameOf(candidate, 30)}：${Math.round(measured.percent)}%（${formatTokens(measured.tokens)} / ${formatTokens(measured.window)}）`
+      `${nameOf(candidate, 30)}: ${Math.round(measured.percent)}% (${formatTokens(measured.tokens)} / ${formatTokens(measured.window)})`
     const now = Date.now()
     const others = sessions
       .filter(candidate => candidate.sessionId !== session.sessionId && isLive(candidate, now))
@@ -2097,7 +2102,7 @@ ${tags}
       .map(candidate => [candidate, contextOf(candidate)])
       .filter(([, measured]) => measured !== undefined)
 
-    this.contextItem.text = `$(pie-chart) 上下文 ${Math.round(context.percent)}%`
+    this.contextItem.text = `$(pie-chart) Context ${Math.round(context.percent)}%`
     this.contextItem.backgroundColor =
       context.percent >= 90
         ? new vscode.ThemeColor('statusBarItem.errorBackground')
@@ -2105,14 +2110,16 @@ ${tags}
           ? new vscode.ThemeColor('statusBarItem.warningBackground')
           : undefined
     this.contextItem.tooltip = [
-      current.isFocused ? '目前對話的上下文（跟著你點開的 Claude 分頁）' : '最近活動的對話的上下文（還沒對上 Claude 分頁，點一下分頁就會跟著它）',
+      current.isFocused
+        ? "The current conversation's context (follows the Claude tab you open)"
+        : "The most recently active conversation's context (no Claude tab matched yet; click a tab and it follows that one)",
       describe(session, context),
       context.isEstimate
-        ? '和 /context 同一種算法：上一次回應的用量，加上之後新加入的內容（估算）'
-        : '上一次回應時的用量',
-      ...(others.length === 0 ? [] : ['', '其他對話：', ...others.map(([candidate, measured]) => `・${describe(candidate, measured)}`)]),
+        ? "Counted as /context counts it: the last reply's usage plus what was added since (an estimate)"
+        : "The usage as of the last reply",
+      ...(others.length === 0 ? [] : ['', 'Other conversations:', ...others.map(([candidate, measured]) => `· ${describe(candidate, measured)}`)]),
       '',
-      '按一下打開 Agent Board',
+      'Click to open Agent Board',
     ].join('\n')
     this.contextItem.show()
   }

@@ -172,7 +172,9 @@ it listened. Both webviews post `ready`, and the extension answers with `repost`
 - **Keyed updates in the board.** Running cards and meters are updated in place, so their
   animations do not restart every second. Do not replace them wholesale.
 - **The first poll is a baseline.** `notify` announces changes, never the state it found at startup.
-- **Interface strings are Traditional Chinese; comments and identifiers are English.**
+- **Everything is in English: interface strings, comments, identifiers, docs and test data.**
+  Until 0.8.0 the interface was in Traditional Chinese; 0.9.0 moved it to English and dropped
+  the Chinese README.
 - **No dependencies in the extension.** It ships as source in the package.
 - **The mod names environment variables as string literals** (`$.env.get('HOME')`), so
   `claude plugin validate` can list them.
@@ -209,7 +211,7 @@ Headless Chrome will not go narrower than 500 px, so the pages take `?w=` for th
 
 1. Run every command above.
 2. Set the version in three places: `.claude-plugin/plugin.json`, `vscode-extension/package.json`,
-   and the badge and the Verify table in both READMEs.
+   and the badge and the Verify table in `README.md`.
 3. Rebuild the package and install it:
    ```bash
    cd vscode-extension
@@ -226,5 +228,5 @@ does so when the turn ends. The extension needs **Developer: Reload Window**.
 
 This repository is meant to be shared. Nothing personal goes in: no real home-folder paths, no
 real conversation titles, no session ids, no tokens. Tests and preview data use made-up names
-(`/home/tester`, `整理讀書筆記`). The two checks that read real data (`real-transcripts.js`,
+(`/home/tester`, `Tidy up reading notes`). The two checks that read real data (`real-transcripts.js`,
 `live-smoke.js`) print it and store none of it.

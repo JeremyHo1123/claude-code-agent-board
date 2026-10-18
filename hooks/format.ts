@@ -42,10 +42,10 @@ export type PlanUsage = {
 }
 
 const PLAN_WINDOWS: ReadonlyArray<readonly [string, string]> = [
-  ['five_hour', '5 小時工作階段'],
-  ['seven_day', '每週・所有模型'],
-  ['seven_day_opus', '每週・Opus'],
-  ['seven_day_sonnet', '每週・Sonnet'],
+  ['five_hour', '5-hour session'],
+  ['seven_day', 'Weekly · all models'],
+  ['seven_day_opus', 'Weekly · Opus'],
+  ['seven_day_sonnet', 'Weekly · Sonnet'],
 ]
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -94,7 +94,7 @@ export function parsePlanUsage(body: unknown, fetchedAt: number): PlanUsage | un
     for (const item of list) {
       const name = asRecord(item)?.display_name
       if (typeof name === 'string' && !windows.some(window => window.key === `model:${name}`)) {
-        const window = windowOf(`model:${name}`, `每週・${name}`, item)
+        const window = windowOf(`model:${name}`, `Weekly · ${name}`, item)
         if (window !== undefined) {
           windows.push(window)
         }
@@ -306,30 +306,42 @@ export function statusIcon(row: AgentBoardRow, now: number): string {
   return { running: '●', done: '✓', failed: '✗', stopped: '■' }[row.status]
 }
 
+/** "1 step", "3 steps". */
+export function stepsText(count: number): string {
+  return count === 1 ? '1 step' : `${count} steps`
+}
+
 /** What a row is doing now, or what it cost once it ended. */
 export function rowNote(row: AgentBoardRow, now: number): string {
   const last = row.lastAction === '' ? '—' : row.lastAction
 
   switch (row.status) {
     case 'running': {
-      const idle = isIdle(row, now) ? `${Math.floor((now - row.lastAt) / 60_000)} 分鐘沒有動靜 · ` : ''
+      const idle = isIdle(row, now) ? `quiet for ${Math.floor((now - row.lastAt) / 60_000)} min · ` : ''
 
-      return `${idle}最近：${last}`
+      return `${idle}last: ${last}`
     }
     case 'done':
       return row.tokens === undefined
         ? 'token —'
-        : `token ${formatTokens(totalTokens(row.tokens))}（快取讀取 ${formatTokens(row.tokens.cacheRead)}）`
+        : `token ${formatTokens(totalTokens(row.tokens))} (cache read ${formatTokens(row.tokens.cacheRead)})`
     case 'failed':
-      return `失敗，最後一步：${last}`
+      return `failed, last step: ${last}`
     case 'stopped':
-      return '已中止'
+      return 'stopped'
   }
 }
 
 /** The second line of a row: type, steps, and its note. */
 export function rowDetail(row: AgentBoardRow, now: number): string {
-  return `${row.type} · ${row.steps} 步 · ${rowNote(row, now)}`
+  return `${row.type} · ${stepsText(row.steps)} · ${rowNote(row, now)}`
+}
+
+/** "2 running · 3 ended", with the failed ones when there are any. */
+export function summaryText(list: readonly AgentBoardRow[]): string {
+  const { running, ended, failed } = countRows(list)
+
+  return `${running} running · ${ended} ended${failed > 0 ? ` · ${failed} failed` : ''}`
 }
 
 function tableCell(text: string): string {
@@ -341,16 +353,15 @@ function tableCell(text: string): string {
  * mod pane), and the text `/agent-board` prints.
  */
 export function renderMarkdown(list: readonly AgentBoardRow[], now: number, keep: number, withHeading: boolean): string {
-  const { running, ended, failed } = countRows(list)
-  const lines = withHeading ? ['# 子代理進度', ''] : []
+  const lines = withHeading ? ['# Subagents', ''] : []
 
   // no clock time: the hooks environment's time zone is not the person's
-  lines.push(`${running} 執行中 · ${ended} 已結束${failed > 0 ? ` · ${failed} 失敗` : ''}`, '')
+  lines.push(summaryText(list), '')
 
   if (list.length === 0) {
-    lines.push('這個 session 還沒有子代理。派出子代理後，這裡會自動更新。')
+    lines.push('No subagents in this session yet. Once one starts, this updates by itself.')
   } else {
-    lines.push('| 狀態 | 子代理 | 類型 | 時間 | 步數 | 最近一步／token |', '|:-:|---|---|--:|--:|---|')
+    lines.push('| State | Subagent | Type | Time | Steps | Last step / token |', '|:-:|---|---|--:|--:|---|')
     for (const row of orderRows(list, keep)) {
       const elapsed = formatElapsed((row.endedAt ?? now) - row.startedAt)
 
@@ -360,7 +371,7 @@ export function renderMarkdown(list: readonly AgentBoardRow[], now: number, keep
     }
   }
 
-  lines.push('', '狀態符號：● 執行中　⏸ 超過 2 分鐘沒動靜　✓ 完成　✗ 失敗　■ 中止', '')
+  lines.push('', 'Key: ● running · ⏸ quiet for over 2 min · ✓ done · ✗ failed · ■ stopped', '')
 
   return lines.join('\n')
 }

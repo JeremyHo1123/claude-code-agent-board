@@ -226,7 +226,7 @@ body.vscode-high-contrast-light {
 
 /* wide: label and value over the bar, the reset time under it */
 .meter {
-  /* a container too: the reset's second part ("4 小時 51 分後") shows by the meter's own width */
+  /* a container too: the reset's second part ("in 4h 51m") shows by the meter's own width */
   container: meter / inline-size;
   display: grid;
   grid-template-areas:

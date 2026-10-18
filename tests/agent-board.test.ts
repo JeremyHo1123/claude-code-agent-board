@@ -40,11 +40,11 @@ test('the plan usage body reads into windows, and junk reads as none', async () 
   expect(plan?.windows.map(window => window.key)).toEqual(['five_hour', 'seven_day', 'seven_day_sonnet', 'model:Fable'])
   expect(plan?.windows[0]).toEqual({
     key: 'five_hour',
-    label: '5 小時工作階段',
+    label: '5-hour session',
     percent: 62,
     resetsAt: '2026-10-05T12:00:00Z',
   })
-  expect(plan?.windows[2]).toEqual({ key: 'seven_day_sonnet', label: '每週・Sonnet', percent: 4 })
+  expect(plan?.windows[2]).toEqual({ key: 'seven_day_sonnet', label: 'Weekly · Sonnet', percent: 4 })
   expect(plan?.extra).toEqual({ percent: 24.6, usedCredits: 1_230, monthlyLimit: 5_000, currency: 'USD' })
   expect(parsePlanUsage({ error: 'nope' }, 0)).toBeUndefined()
   expect(parsePlanUsage('not json', 0)).toBeUndefined()
@@ -302,7 +302,7 @@ const PANE = {
   component: 'Pane',
   requestId: 'agent-board',
   props: {
-    title: '子代理進度',
+    title: 'Subagents',
     isFocused: false,
     bodyColumns: 60,
     placement: 'inline',
@@ -314,7 +314,7 @@ const PANE = {
 const SPAWN = {
   tool_use_id: 'toolu_1',
   prompt: 'Search this week for CVPR papers',
-  description: '頂會焦點論文搜尋',
+  description: 'Top-venue paper search',
   subagentType: 'general-purpose',
   provider: { plugin: 'engine', tier: 'core' },
   parentModel: 'claude-opus-5-5',
@@ -335,8 +335,8 @@ test('a spawned subagent shows as running, then done with its tokens, then clear
 
   for (const surface of ['terminal', 'desktop', 'vscode'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect((await ui.find({ type: 'Text', text: /頂會焦點論文搜尋/ }))?.text).toBe('● 頂會焦點論文搜尋')
-    expect(await ui.find({ type: 'Text', text: /general-purpose · 0 步 · 最近：啟動中/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /Top-venue paper search/ }))?.text).toBe('● Top-venue paper search')
+    expect(await ui.find({ type: 'Text', text: /general-purpose · 0 steps · last: starting/ })).toBeDefined()
     expect(await ui.find({ key: 'clear' })).toBeUndefined()
     await ui.unmount()
   }
@@ -359,14 +359,14 @@ test('a spawned subagent shows as running, then done with its tokens, then clear
   })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /頂會焦點論文搜尋/ }))?.text).toBe('✓ 頂會焦點論文搜尋')
+  expect((await ui.find({ type: 'Text', text: /Top-venue paper search/ }))?.text).toBe('✓ Top-venue paper search')
   expect(await ui.find({ type: 'Text', text: '1:05' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /token 34k（快取讀取 30k）/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /0 執行中 · 1 已結束/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /token 34k \(cache read 30k\)/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /0 running · 1 ended/ })).toBeDefined()
 
   await ui.press({ key: 'clear' })
-  expect(await ui.find({ type: 'Text', text: /頂會焦點論文搜尋/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /還沒有子代理/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Top-venue paper search/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /No subagents in this session yet/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -379,7 +379,7 @@ test('an interrupted subagent shows as stopped', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } as const }))
   on('agent.list', () => ({ value: [] }))
 
-  await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_2', description: '產業新聞搜尋' })
+  await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_2', description: 'Industry news search' })
   await $.turn.complete({
     answer: '',
     durationMs: 10,
@@ -390,8 +390,8 @@ test('an interrupted subagent shows as stopped', async ($, on) => {
   })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /產業新聞搜尋/ }))?.text).toBe('■ 產業新聞搜尋')
-  expect(await ui.find({ type: 'Text', text: /已中止/ })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /Industry news search/ }))?.text).toBe('■ Industry news search')
+  expect(await ui.find({ type: 'Text', text: /stopped$/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -433,7 +433,7 @@ test('two running subagents open the pane; the periodic check settles a killed o
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
   expect((await ui.find({ type: 'Text', text: /^. A$/ }))?.text).toBe('■ A')
   expect((await ui.find({ type: 'Text', text: /^. B$/ }))?.text).toBe('● B')
-  expect(await ui.find({ type: 'Text', text: /1 執行中 · 1 已結束/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /1 running · 1 ended/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -468,11 +468,11 @@ test('each session writes the JSON snapshot the VS Code extension reads', async 
   on('ui.open', () => ({ value: { isPlaced: true } as const }))
   on('agent.list', () => ({ value: [] }))
 
-  await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_3', description: 'wiki 查重' })
+  await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_3', description: 'Wiki duplicate check' })
   expect(pathKey(written.at(-1)?.path ?? '')).toBe('/home/tester/.claude/agent-board/sessions/session-1.json')
   const started = JSON.parse(written.at(-1)?.text ?? '{}')
   expect(started).toMatchObject({ sessionId: 'session-1', cwd: '/work/project', isClosed: false })
-  expect(started.agents[0]).toMatchObject({ label: 'wiki 查重', status: 'running', steps: 0, lastAction: '啟動中' })
+  expect(started.agents[0]).toMatchObject({ label: 'Wiki duplicate check', status: 'running', steps: 0, lastAction: 'starting' })
   expect(started.usage).toMatchObject({
     contextPercent: 34,
     contextTokens: 341_000,
@@ -544,7 +544,7 @@ test("the session's activity follows its turns, questions and permission dialogs
     ],
   })
   await clock.advance(1_000)
-  expect(activity()).toMatchObject({ state: 'waiting', kind: 'question', reason: '問你問題' })
+  expect(activity()).toMatchObject({ state: 'waiting', kind: 'question', reason: 'has a question for you' })
   answer?.()
   await asking
   await clock.advance(1_000)
@@ -552,7 +552,7 @@ test("the session's activity follows its turns, questions and permission dialogs
 
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'ls' } })
   await clock.advance(1_000)
-  expect(activity()).toMatchObject({ state: 'waiting', kind: 'permission', reason: '等你允許 Bash' })
+  expect(activity()).toMatchObject({ state: 'waiting', kind: 'permission', reason: 'needs your OK for Bash' })
 
   await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 'turn-1', reason: 'answer' })
   await clock.advance(1_000)

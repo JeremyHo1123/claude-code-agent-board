@@ -20,6 +20,7 @@ import {
   renderMarkdown,
   rowDetail,
   statusIcon,
+  summaryText,
   weekEndOf,
 } from './format'
 import type { PlanAccount, PlanUsage, SessionActivity } from './format'
@@ -36,7 +37,7 @@ import type { PlanAccount, PlanUsage, SessionActivity } from './format'
  */
 let boardRoot: string | null | undefined
 const PANE = 'agent-board'
-const TITLE = '子代理進度'
+const TITLE = 'Subagents'
 const TICK_MS = 5_000
 const FLUSH_MS = 1_000
 const MAX_ROWS = 100
@@ -141,8 +142,8 @@ function endPermissionWait(): void {
 function freshRow(id: string, at: number): AgentBoardRow {
   return {
     id,
-    label: `未具名代理 ${id.slice(0, 7)}`,
-    type: '其他（workflow 等）',
+    label: `Unnamed agent ${id.slice(0, 7)}`,
+    type: 'other (workflow…)',
     isListed: false,
     status: 'running',
     startedAt: at,
@@ -262,7 +263,7 @@ async function fetchPlan($: EngineInterface, at: number, failuresBefore: number)
     const auth = await $.session.authorize()
     if (auth === null || auth.kind !== 'bearer') {
       // an API key or a third-party provider: no subscription windows to read
-      return failed({ at, message: '沒有訂閱帳號的憑證' })
+      return failed({ at, message: 'no subscription sign-in' })
     }
     const response = await $.http.fetch(PLAN_USAGE_URL, {
       auth: auth.handle,
@@ -276,7 +277,7 @@ async function fetchPlan($: EngineInterface, at: number, failuresBefore: number)
     }
     const parsed = parsePlanUsage(JSON.parse(response.text), at)
     if (parsed === undefined) {
-      return failed({ at, message: '回應的格式讀不懂' })
+      return failed({ at, message: 'reply in an unknown shape' })
     }
 
     // a success clears the error and the streak: JSON drops an undefined field
@@ -408,7 +409,7 @@ async function writeSnapshot($: EngineInterface, ending?: { sessionId: string })
 async function refreshStatusLine($: EngineInterface): Promise<void> {
   const { running, ended } = countRows(await read($, rows))
 
-  $.ui.status(running === 0 ? undefined : `子代理 ${running} 執行中 · ${ended} 已結束 — /agent-board`)
+  $.ui.status(running === 0 ? undefined : `Subagents ${running} running · ${ended} ended — /agent-board`)
 }
 
 async function maybeAutoOpen($: EngineInterface): Promise<void> {
@@ -463,7 +464,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'agent-board',
-      description: '子代理進度：每個子代理的狀態、步數、最近一步、時間與 token',
+      description: 'Subagents: the state, steps, last step, time and tokens of each',
       immediate: true,
     })
     $.clock.every(TICK_MS, () => {
@@ -514,13 +515,13 @@ export const register: Register = on => {
     const surfaces = await $.session.surfaces().catch(() => [] as readonly string[])
     const fill = await read($, context)
     const diagnosis = [
-      `[上下文橫條] 連上的畫面：${surfaces.join(', ') || '（無）'}`,
-      `[上下文橫條] 被要求畫過 ${bandAsks} 次${bandSurfaces.size > 0 ? `（${[...bandSurfaces].join(', ')}）` : ''}`,
-      `[上下文橫條] 目前數字：${fill === null ? '（還沒讀到）' : `${fill.percent}% · ${formatTokens(fill.tokens)} / ${formatTokens(fill.window)}`}`,
+      `[context bar] surfaces attached: ${surfaces.join(', ') || '(none)'}`,
+      `[context bar] asked to draw ${bandAsks === 1 ? '1 time' : `${bandAsks} times`}${bandSurfaces.size > 0 ? ` (${[...bandSurfaces].join(', ')})` : ''}`,
+      `[context bar] figures: ${fill === null ? '(none read yet)' : `${fill.percent}% · ${formatTokens(fill.tokens)} / ${formatTokens(fill.window)}`}`,
     ].join('\n')
 
     return {
-      text: `${board}\n圖形面板：VS Code 左側活動列的 Agent Board 圖示，或 Ctrl+Shift+P →「Agent Board: 打開子代理面板」。\n\n${diagnosis}`,
+      text: `${board}\nThe graphical board: the Agent Board icon in VS Code's activity bar, or Ctrl+Shift+P → "Agent Board: Open Subagent Board".\n\n${diagnosis}`,
     }
   })
 
@@ -547,7 +548,7 @@ export const register: Register = on => {
           label,
           type: e.subagentType,
           isListed: true,
-          lastAction: row.lastAction === '' ? '啟動中' : row.lastAction,
+          lastAction: row.lastAction === '' ? 'starting' : row.lastAction,
         }),
         true,
       )
@@ -570,7 +571,7 @@ export const register: Register = on => {
       isDirty = true
 
       if (String(e.tool) === 'AskUserQuestion') {
-        setActivity('waiting', { reason: '問你問題', kind: 'question' })
+        setActivity('waiting', { reason: 'has a question for you', kind: 'question' })
         try {
           return await next(e)
         } finally {
@@ -606,7 +607,7 @@ export const register: Register = on => {
 
   // Raised just before a permission dialog opens (the classic PermissionRequest hook's moment).
   on('classic.PermissionRequest', async ($, e, next) => {
-    setActivity('waiting', { reason: `等你允許 ${e.tool_name}`, kind: 'permission' })
+    setActivity('waiting', { reason: `needs your OK for ${e.tool_name}`, kind: 'permission' })
 
     return next(e)
   })
@@ -666,7 +667,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="row">
-        <Text dimColor>上下文 </Text>
+        <Text dimColor>Context </Text>
         <Text color={fillTone(fill.percent)}>{fillBar(fill.percent, cells)}</Text>
         <Text bold>{` ${Math.round(fill.percent)}%`}</Text>
         <Text dimColor>{` · ${formatTokens(fill.tokens)} / ${formatTokens(fill.window)}`}</Text>
@@ -678,8 +679,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const list = await read($, rows)
     const at = Math.max(await read($, now), ...list.map(row => row.lastAt))
-    const { running, ended, failed } = countRows(list)
-    const summary = `${running} 執行中 · ${ended} 已結束${failed > 0 ? ` · ${failed} 失敗` : ''}`
+    const { ended } = countRows(list)
+    const summary = summaryText(list)
 
     return (
       <Box flexDirection="column">
@@ -688,7 +689,7 @@ export const register: Register = on => {
           {ended > 0 && (
             <Button
               key="clear"
-              label="清除已結束"
+              label="Clear ended"
               dimColor
               onPress={async () => {
                 await update($, rows, current => current.filter(row => row.status === 'running'))
@@ -698,7 +699,7 @@ export const register: Register = on => {
           )}
         </Box>
         {list.length === 0 && (
-          <Text dimColor>這個 session 還沒有子代理。派出子代理後，這裡會即時顯示它們的進度。</Text>
+          <Text dimColor>No subagents in this session yet. Once one starts, its progress shows here as it happens.</Text>
         )}
         {orderRows(list, SHOWN_ENDED).map(row => (
           <Box flexDirection="column" marginTop={1}>

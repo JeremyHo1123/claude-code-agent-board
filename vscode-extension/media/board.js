@@ -26,19 +26,19 @@
   const RECENT_FAIL_MS = 30 * 60_000
 
   const STATE_LABEL = {
-    running: '執行中',
-    quiet: '暫無動作',
-    lost: '可能已中斷',
-    done: '完成',
-    failed: '失敗',
-    stopped: '已中止',
+    running: 'running',
+    quiet: 'quiet',
+    lost: 'may be cut off',
+    done: 'done',
+    failed: 'failed',
+    stopped: 'stopped',
   }
   const ROW_GLYPH = { done: '✓', failed: '✕', stopped: '■' }
   /** A window read longer ago than this, while the shared read fails, earns the problem note. */
   const STALE_MS = 90_000
   const SOURCE_TEXT = {
-    plan: 'claude.ai 用量查詢（所有分頁共用，每 30 秒一次，數字最準）',
-    response: 'Claude 回覆時附帶的額度（每次回覆都有，但不含那一次回覆本身，會略低）',
+    plan: 'claude.ai usage read (shared by every tab, every 30 seconds; the most exact)',
+    response: 'the figure Claude sends with a reply (every reply has one, but it leaves out that reply itself, so it runs a little low)',
   }
 
   let sessions = []
@@ -95,15 +95,17 @@
 
   const formatInt = count => count.toLocaleString('en-US')
 
+  const stepsText = count => (count === 1 ? '1 step' : `${count} steps`)
+
   function clockOf(ms) {
     const date = new Date(ms)
 
     return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   }
 
-  const WEEKDAY = ['週日', '週一', '週二', '週三', '週四', '週五', '週六']
+  const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-  /** When a window resets, worded as claude.ai's usage page words it ("Resets Tue 4:00 AM"): the weekday and the time. */
+  /** When a window resets, worded as claude.ai's usage page words it ("Resets Tue 4:00 AM", on a 24-hour clock): the weekday and the time. */
   function resetText(iso) {
     const at = Date.parse(iso)
     if (Number.isNaN(at)) {
@@ -112,22 +114,22 @@
     // to the minute: one source says 19:59:59.8, the other 20:00:00
     const date = new Date(Math.round(at / 60_000) * 60_000)
 
-    return `${WEEKDAY[date.getDay()]} ${pad(date.getHours())}:${pad(date.getMinutes())} 重置`
+    return `Resets ${WEEKDAY[date.getDay()]} ${pad(date.getHours())}:${pad(date.getMinutes())}`
   }
 
   function agoText(ms) {
     const seconds = Math.max(0, Math.round(ms / 1000))
     if (seconds < 5) {
-      return '剛剛更新'
+      return 'updated just now'
     }
     if (seconds < 60) {
-      return `${seconds} 秒前更新`
+      return `updated ${seconds}s ago`
     }
     if (seconds < 3600) {
-      return `${Math.floor(seconds / 60)} 分鐘前更新`
+      return `updated ${Math.floor(seconds / 60)} min ago`
     }
 
-    return `${Math.floor(seconds / 3600)} 小時前更新`
+    return `updated ${Math.floor(seconds / 3600)}h ago`
   }
 
   function projectOf(cwd) {
@@ -135,7 +137,7 @@
       .split(/[\\/]+/)
       .filter(Boolean)
 
-    return parts[parts.length - 1] || '對話'
+    return parts[parts.length - 1] || 'conversation'
   }
 
   /** A session's name: the title Claude Code gave its tab, else its project folder. */
@@ -171,7 +173,7 @@
 
   /** A card's short name for an agent type; the detail keeps the full one. */
   function typeLabel(type) {
-    return { 'general-purpose': '通用', '其他（workflow 等）': 'workflow' }[type] || type
+    return { 'general-purpose': 'general', 'other (workflow…)': 'workflow' }[type] || type
   }
 
   /** A workflow agent's tag: its run's name and the phase it works in. */
@@ -273,7 +275,7 @@
   const attentionSection = el('section', 'section')
   const attentionHead = el('div', 'section-head is-attn')
   const attentionCount = el('span', 'count')
-  attentionHead.append(el('span', '', '需要你'), attentionCount)
+  attentionHead.append(el('span', '', 'Needs you'), attentionCount)
   const waitList = el('div', 'list is-attn')
   const attentionCards = el('div', 'cards')
   const failList = el('div', 'list')
@@ -283,14 +285,14 @@
   const sessionsSection = el('section', 'section')
   const sessionsHead = el('div', 'section-head')
   const sessionsCount = el('span', 'count')
-  sessionsHead.append(el('span', '', '對話'), sessionsCount)
+  sessionsHead.append(el('span', '', 'Conversations'), sessionsCount)
   const sessionList = el('div', 'list')
   sessionsSection.append(sessionsHead, sessionList)
 
   const runningSection = el('section', 'section')
   const runningHead = el('div', 'section-head')
   const runningCount = el('span', 'count')
-  runningHead.append(el('span', '', '執行中'), runningCount)
+  runningHead.append(el('span', '', 'Running'), runningCount)
   const cards = el('div', 'cards')
   runningSection.append(runningHead, cards)
 
@@ -298,7 +300,7 @@
   const toggle = el('button', 'toggle')
   toggle.type = 'button'
   const endedCount = el('span', 'count')
-  toggle.append(el('span', 'chev', '▼'), el('span', '', '已結束'), endedCount)
+  toggle.append(el('span', 'chev', '▼'), el('span', '', 'Ended'), endedCount)
   const endedList = el('div', 'ended')
   endedSection.append(toggle, endedList)
 
@@ -307,7 +309,7 @@
   const promptsToggle = el('button', 'toggle')
   promptsToggle.type = 'button'
   const promptsCount = el('span', 'count')
-  promptsToggle.append(el('span', 'chev', '▼'), el('span', '', '我的提問'), promptsCount)
+  promptsToggle.append(el('span', 'chev', '▼'), el('span', '', 'My prompts'), promptsCount)
   const promptsList = el('div', 'list is-prompts')
   promptsSection.append(promptsToggle, promptsList)
 
@@ -406,7 +408,7 @@
     const base =
       detailData !== undefined && detailData.key === ui.detail.key
         ? detailData
-        : { key: ui.detail.key, missing: true, error: '正在讀取這個子代理的紀錄…' }
+        : { key: ui.detail.key, missing: true, error: "Reading this subagent's transcript…" }
     const data = live
       ? {
           ...base,
@@ -458,19 +460,19 @@
     const stopped = count('stopped')
 
     if (waiting > 0) {
-      nodes.push(chip('warn', '⏸', waiting, '等你'))
+      nodes.push(chip('warn', '⏸', waiting, 'waiting'))
     }
     if (running > 0) {
-      nodes.push(chip('run', '●', running, '執行中'))
+      nodes.push(chip('run', '●', running, 'running'))
     }
     if (done > 0) {
-      nodes.push(chip('good', '✓', done, '完成'))
+      nodes.push(chip('good', '✓', done, 'done'))
     }
     if (failed > 0) {
-      nodes.push(chip('crit', '✕', failed, '失敗'))
+      nodes.push(chip('crit', '✕', failed, 'failed'))
     }
     if (stopped > 0) {
-      nodes.push(chip('serious', '■', stopped, '已中止'))
+      nodes.push(chip('serious', '■', stopped, 'stopped'))
     }
 
     const signature = `${waiting}/${running}/${done}/${failed}/${stopped}`
@@ -487,7 +489,7 @@
   // ── usage: the subscription's windows, then the main conversation's context ──
   // Keyed like the running cards: a new reading slides its bar instead of redrawing the card.
 
-  /** How long until a window resets: "4 小時 51 分後". */
+  /** How long until a window resets: "in 4h 51m". */
   function untilText(iso, now) {
     const at = Date.parse(iso)
     if (Number.isNaN(at)) {
@@ -495,26 +497,26 @@
     }
     const minutes = Math.ceil((at - now) / 60_000)
     if (minutes <= 0) {
-      return '時間已到'
+      return 'due now'
     }
     if (minutes < 60) {
-      return `${minutes} 分後`
+      return `in ${minutes} min`
     }
     const hours = Math.floor(minutes / 60)
 
-    return hours < 24 ? `${hours} 小時 ${minutes % 60} 分後` : `${Math.floor(hours / 24)} 天 ${hours % 24} 小時後`
+    return hours < 24 ? `in ${hours}h ${minutes % 60}m` : `in ${Math.floor(hours / 24)}d ${hours % 24}h`
   }
 
   function shortAgo(ms) {
     const seconds = Math.max(0, Math.round(ms / 1000))
     if (seconds < 5) {
-      return '剛剛'
+      return 'just now'
     }
     if (seconds < 60) {
-      return `${seconds} 秒前`
+      return `${seconds}s ago`
     }
 
-    return seconds < 3600 ? `${Math.floor(seconds / 60)} 分鐘前` : `${Math.floor(seconds / 3600)} 小時前`
+    return seconds < 3600 ? `${Math.floor(seconds / 60)} min ago` : `${Math.floor(seconds / 3600)}h ago`
   }
 
   function money(minor, currency) {
@@ -526,7 +528,7 @@
   function inText(ms) {
     const seconds = Math.max(1, Math.ceil(ms / 1000))
 
-    return seconds < 60 ? `${seconds} 秒後` : seconds < 3600 ? `${Math.ceil(seconds / 60)} 分鐘後` : `${Math.ceil(seconds / 3600)} 小時後`
+    return seconds < 60 ? `in ${seconds}s` : seconds < 3600 ? `in ${Math.ceil(seconds / 60)} min` : `in ${Math.ceil(seconds / 3600)}h`
   }
 
   /** Why an account's shared claude.ai read is behind, and when it is tried again; undefined while it works. */
@@ -535,22 +537,22 @@
     if (!error) {
       return undefined
     }
-    const what = error.status === 429 ? '被限流' : error.status ? `失敗（HTTP ${error.status}）` : '失敗'
+    const what = error.status === 429 ? 'rate-limited' : error.status ? `failed (HTTP ${error.status})` : 'failed'
     const nextAt = account.planNextAt
-    const retry = typeof nextAt === 'number' && nextAt > now ? `，${inText(nextAt - now)}再試` : ''
+    const retry = typeof nextAt === 'number' && nextAt > now ? `, retrying ${inText(nextAt - now)}` : ''
 
     return {
-      text: `用量查詢${what}${retry}`,
+      text: `Usage read ${what}${retry}`,
       detail: [
-        `claude.ai 用量查詢${what}（${clockOf(error.at)}）${error.message ? `：${error.message}` : ''}`,
-        'Claude 回覆時附帶的額度不受影響：有對話在工作時，5 小時與每週用量照樣即時更新。',
+        `claude.ai usage read ${what} (${clockOf(error.at)})${error.message ? `: ${error.message}` : ''}`,
+        'The figures sent with replies are unaffected: while a conversation works, the 5-hour and weekly use still update as it happens.',
       ].join('\n'),
     }
   }
 
   /** What an account is called where two are shown: its sign-in's email, else that it is not known. */
   function accountName(account) {
-    return account.label || (account.id === '' ? '未辨識的帳號' : `帳號 ${account.id.slice(0, 6)}`)
+    return account.label || (account.id === '' ? 'Unidentified account' : `Account ${account.id.slice(0, 6)}`)
   }
 
   /** An account's windows as the extension settled them, with where and when each figure was read. */
@@ -562,12 +564,12 @@
       at: window.at,
       // the reset as claude.ai's usage page words it; how long that is from now joins it where there is room
       foot: window.resetsAt ? resetText(window.resetsAt) : '',
-      footExtra: window.resetsAt ? `・${untilText(window.resetsAt, now)}` : '',
+      footExtra: window.resetsAt ? ` · ${untilText(window.resetsAt, now)}` : '',
       title: [
-        `${window.label}：已用 ${Math.round(window.percent)}%`,
-        ...(window.resetsAt ? [`${resetText(window.resetsAt)}（${untilText(window.resetsAt, now)}）`] : []),
-        `來源：${SOURCE_TEXT[window.source] || window.source}`,
-        `讀取於 ${clockOf(window.at)}（${shortAgo(now - window.at)}）`,
+        `${window.label}: ${Math.round(window.percent)}% used`,
+        ...(window.resetsAt ? [`${resetText(window.resetsAt)} (${untilText(window.resetsAt, now)})`] : []),
+        `Source: ${SOURCE_TEXT[window.source] || window.source}`,
+        `Read at ${clockOf(window.at)} (${shortAgo(now - window.at)})`,
       ].join('\n'),
     }))
   }
@@ -581,7 +583,7 @@
     let parts = accountParts.get(id)
     if (parts === undefined) {
       const head = el('div', 'usage-head')
-      const title = el('span', 'usage-title', '訂閱用量')
+      const title = el('span', 'usage-title', 'Subscription usage')
       const name = el('span', 'usage-session')
       const fresh = el('span', 'usage-fresh')
       head.append(title, name, fresh)
@@ -655,26 +657,26 @@
       setText(parts.name, accountName(account))
       parts.name.title = [
         accountName(account),
-        ...(account.isCurrent ? ['目前對話用的是這個帳號'] : []),
-        account.sessions.length > 0 ? `開著的對話：${account.sessions.join('、')}` : '這個帳號沒有開著的對話',
+        ...(account.isCurrent ? ['The current conversation uses this account'] : []),
+        account.sessions.length > 0 ? `Open conversations: ${account.sessions.join(', ')}` : 'No open conversation uses this account',
       ].join('\n')
     }
 
     if (rows.length > 0) {
       const freshest = Math.max(...rows.map(row => row.at))
-      setText(parts.fresh, `${shortAgo(now - freshest)}更新`)
+      setText(parts.fresh, `updated ${shortAgo(now - freshest)}`)
       parts.fresh.title = [
         ...account.list.map(
-          window => `${window.label}：${window.source === 'plan' ? '用量查詢' : '回覆附帶'}，${clockOf(window.at)}`,
+          window => `${window.label}: ${window.source === 'plan' ? 'usage read' : 'reply'}, ${clockOf(window.at)}`,
         ),
         '',
-        '同一段期間內用量只會增加，所以每一項取兩個來源裡較高的讀數：',
-        `・用量查詢＝${SOURCE_TEXT.plan}`,
-        `・回覆附帶＝${SOURCE_TEXT.response}`,
-        '換帳號或期間重置後，舊的讀數會立刻作廢。',
+        'Use within a window only grows, so each figure is the higher reading of two sources:',
+        `· usage read = ${SOURCE_TEXT.plan}`,
+        `· reply = ${SOURCE_TEXT.response}`,
+        'After a change of account or a reset, the old readings are dropped at once.',
       ].join('\n')
     } else {
-      setText(parts.fresh, '等待額度讀數')
+      setText(parts.fresh, 'waiting for a reading')
       parts.fresh.title = ''
     }
     for (const row of rows) {
@@ -692,8 +694,8 @@
     if (extra) {
       const used = extra.usedCredits === null ? '—' : money(extra.usedCredits, extra.currency)
       const limit = extra.monthlyLimit === null ? '' : ` / ${money(extra.monthlyLimit, extra.currency)}`
-      const share = extra.percent === null ? '' : `（${Math.round(extra.percent)}%）`
-      setText(parts.extra, `額外用量 ${used}${limit}${share}`)
+      const share = extra.percent === null ? '' : ` (${Math.round(extra.percent)}%)`
+      setText(parts.extra, `Extra usage ${used}${limit}${share}`)
     }
 
     return [parts.head, ...rows.map(row => meterByKey.get(row.key).node), parts.note, parts.extra]
@@ -743,21 +745,21 @@
       if (contextHead.className !== className) {
         contextHead.className = className
       }
-      setText(contextTitle, isCurrentFocused ? '目前對話' : '最近活動的對話')
+      setText(contextTitle, isCurrentFocused ? 'Current conversation' : 'Latest conversation')
       contextTitle.title = isCurrentFocused
-        ? '跟著你目前（或最後）點開的 Claude 分頁'
-        : '還沒對上任何 Claude 分頁，先固定顯示最近有動作的對話；點一下 Claude 分頁，就會改成跟著它'
+        ? 'Follows the Claude tab you have open (or opened last)'
+        : 'No Claude tab matched yet, so this shows the conversation that moved last; click a Claude tab and it follows that one'
       setText(contextName, nameOf(current))
       contextName.title = [nameOf(current), String(current.cwd || ''), modelOf(current.model)].filter(Boolean).join('\n')
       drawMeter(meterFor(CONTEXT_KEY), {
-        label: '上下文',
+        label: 'Context',
         percent: context.percent,
         foot: `${formatTokens(context.tokens)} / ${formatTokens(context.window)}`,
         title: [
-          `上下文已用 ${formatInt(context.tokens)} / ${formatInt(context.window)} token（${Math.round(context.percent)}%）`,
+          `Context: ${formatInt(context.tokens)} / ${formatInt(context.window)} tokens used (${Math.round(context.percent)}%)`,
           context.isEstimate
-            ? '和 /context 同一種算法：上一次回應的用量，加上之後新加入的內容（估算）'
-            : '上一次回應時的用量（這次沒拿到 /context 的估算）',
+            ? "Counted as /context counts it: the last reply's usage plus what was added since (an estimate)"
+            : "The usage as of the last reply (no /context estimate this time)",
         ].join('\n'),
       })
     }
@@ -822,14 +824,14 @@
 
   /** A card's or row's hover text: the facts the detail opens on, and that a click opens it. */
   function detailsText(agent, session) {
-    const parts = [`開始 ${clockOf(agent.startedAt)}`]
+    const parts = [`started ${clockOf(agent.startedAt)}`]
     if (agent.endedAt) {
-      parts.push(`結束 ${clockOf(agent.endedAt)}`)
+      parts.push(`ended ${clockOf(agent.endedAt)}`)
     }
-    parts.push(agent.type, `${agent.steps} 步`)
+    parts.push(agent.type, stepsText(agent.steps))
     parts.push(`${nameOf(session)} · ${modelOf(session.model)}`)
 
-    return `${agent.label}\n${parts.join(' · ')}\n按一下查看任務細節`
+    return `${agent.label}\n${parts.join(' · ')}\nClick for the task's details`
   }
 
   /** Puts each card in its container, re-inserting none that is already in place (its animations keep running). */
@@ -844,7 +846,7 @@
     }
   }
 
-  /** Running cards: healthy ones under 執行中, quiet or lost ones under 需要你. */
+  /** Running cards: healthy ones under Running, quiet or lost ones under Needs you. */
   function renderRunning(now) {
     const parts = partition(now)
     const list = [...parts.troubled, ...parts.healthy]
@@ -877,7 +879,7 @@
 
       // a workflow's agent names its run and phase; a session's name joins when several have agents
       const tags = [...(agent.workflow ? [workflowTag(agent.workflow)] : []), ...(tag ? [tag] : [])]
-      const metaText = `${STATE_LABEL[state]} · ${typeLabel(agent.type)} · ${agent.steps} 步`
+      const metaText = `${STATE_LABEL[state]} · ${typeLabel(agent.type)} · ${stepsText(agent.steps)}`
       const metaSignature = `${metaText}|${tags.join('|')}`
       if (card.metaSignature !== metaSignature) {
         card.metaSignature = metaSignature
@@ -891,9 +893,9 @@
 
       const noteText =
         state === 'lost'
-          ? '超過 1 分鐘沒有回報，對話可能已中斷'
+          ? 'No word for over a minute; the conversation may be cut off'
           : state === 'quiet'
-            ? `${Math.floor((now - agent.lastAt) / 60_000)} 分鐘沒有新動作，可能在長時間思考`
+            ? `No new step for ${Math.floor((now - agent.lastAt) / 60_000)} min; it may be thinking at length`
             : ''
       card.noteLine.hidden = noteText === ''
       setText(card.note, noteText)
@@ -930,14 +932,14 @@
     // the right-hand figure is how long the state has lasted; the line says what the state is
     const state =
       activity.state === 'waiting'
-        ? activity.reason || '等你回覆'
+        ? activity.reason || 'waiting for your reply'
         : activity.state === 'working'
-          ? '工作中'
-          : `閒置 · ${shortAgo(now - activity.since)}做完這一輪`
+          ? 'working'
+          : `idle · turn done ${shortAgo(now - activity.since)}`
     const body = el('span', 'meta body')
     if (isCurrent) {
-      const mark = el('span', 'tag is-lead is-current', '目前')
-      mark.title = '上方的「上下文」量表顯示的就是這個對話'
+      const mark = el('span', 'tag is-lead is-current', 'current')
+      mark.title = 'The Context meter above shows this conversation'
       body.append(mark)
     }
     body.append(
@@ -950,8 +952,8 @@
     // each conversation's own context, so a glance compares them without switching tabs
     const context = contextOf(session)
     if (context !== undefined) {
-      const figure = el('span', `ctx end ${levelOf(context.percent)}`.trim(), `上下文 ${Math.round(context.percent)}%`)
-      figure.title = `上下文已用 ${formatInt(context.tokens)} / ${formatInt(context.window)} token`
+      const figure = el('span', `ctx end ${levelOf(context.percent)}`.trim(), `context ${Math.round(context.percent)}%`)
+      figure.title = `Context: ${formatInt(context.tokens)} / ${formatInt(context.window)} tokens used`
       meta.append(figure)
     }
     row.append(head, meta)
@@ -959,7 +961,7 @@
     return row
   }
 
-  /** The 需要你 section: waiting sessions (redrawn each second: their wait time ticks), troubled cards, recent failures. */
+  /** The Needs you section: waiting sessions (redrawn each second: their wait time ticks), troubled cards, recent failures. */
   function renderAttention(now) {
     const parts = partition(now)
     const live = liveSessions(now)
@@ -1013,13 +1015,13 @@
     const detail = el('div', 'line spaced')
     const body = el('div', 'body')
     if (agent.status === 'done') {
-      body.append(agent.tokens ? tokenBar(agent.tokens) : el('span', 'note', `完成 · ${agent.steps} 步 · 沒有 token 紀錄`))
+      body.append(agent.tokens ? tokenBar(agent.tokens) : el('span', 'note', `done · ${stepsText(agent.steps)} · no token record`))
     } else if (agent.status === 'failed') {
-      const note = el('span', 'note', `失敗 · 最後一步：${agent.lastAction || '—'}`)
+      const note = el('span', 'note', `failed · last step: ${agent.lastAction || '—'}`)
       note.title = agent.lastAction || ''
       body.append(note)
     } else {
-      body.append(el('span', 'note', `已中止 · ${agent.steps} 步`))
+      body.append(el('span', 'note', `stopped · ${stepsText(agent.steps)}`))
     }
     detail.append(body)
     row.append(detail)
@@ -1052,7 +1054,8 @@
     const rows = list.slice(0, SHOWN_ENDED).map(makeRow)
     if (list.length > SHOWN_ENDED) {
       const more = el('div', 'row')
-      more.append(el('span', 'note', `還有 ${list.length - SHOWN_ENDED} 個較早結束的子代理沒有列出`))
+      const hidden = list.length - SHOWN_ENDED
+      more.append(el('span', 'note', `${hidden} earlier subagent${hidden === 1 ? '' : 's'} not listed`))
       rows.push(more)
     }
     endedList.replaceChildren(...rows)
@@ -1068,7 +1071,7 @@
     promptsSection.hidden = list.length === 0
     setText(promptsCount, String(list.length))
     promptsToggle.setAttribute('aria-expanded', String(ui.promptsOpen))
-    promptsToggle.title = '目前對話裡你打過的每一句。點一句，就到 Claude 分頁搜尋它（Enter 跳下一個相符處）'
+    promptsToggle.title = 'Every prompt you typed in the current conversation. Click one to search for it in the Claude tab (Enter for the next match)'
     promptsList.hidden = !ui.promptsOpen || list.length === 0
 
     const signature = promptsList.hidden ? '' : `${promptsData.sessionId}:${list.length}`
@@ -1081,7 +1084,7 @@
         const row = el('div', 'row is-prompt')
         row.tabIndex = 0
         row.dataset.index = String(index)
-        row.title = [prompt.head, '', '點一下：到 Claude 分頁搜尋這一句'].join('\n')
+        row.title = [prompt.head, '', 'Click to search for this prompt in the Claude tab'].join('\n')
         const line = el('div', 'line')
         line.append(
           el('span', 'glyph lead', String(index + 1)),
@@ -1111,11 +1114,11 @@
       return
     }
 
-    const title = sessions.length === 0 ? '還沒收到資料' : '目前沒有子代理'
+    const title = sessions.length === 0 ? 'No data yet' : 'No subagents right now'
     const sub =
       sessions.length === 0
-        ? '請確認 Claude Code 已載入 agent-board mod：在 Claude 輸入 /agent-board，有回應就代表正常。'
-        : '派出子代理後，這裡會即時顯示它們的進度。'
+        ? 'Check that Claude Code has loaded the agent-board mod: type /agent-board in Claude; an answer means it works.'
+        : 'Once a subagent starts, its progress shows here as it happens.'
     if (empty.dataset.title !== title) {
       empty.dataset.title = title
       empty.innerHTML = EMPTY_ICON
